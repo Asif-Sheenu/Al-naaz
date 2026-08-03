@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: al-naaz-backend
+    env: python
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn config.wsgi:application"
