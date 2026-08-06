@@ -1,5 +1,5 @@
-# from django.apps import AppConfig
+from django.apps import AppConfig
 
 
-# class SalaryConfig(AppConfig):
-#     name = 'salary'
+class SalaryConfig(AppConfig):
+    name = 'salary'

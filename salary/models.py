@@ -1,62 +1,82 @@
-# from django.db import models
-# from django.db import models
-# from employees.models import Employee
+from django.db import models
+from employees.models import Employee
 
 
-# class Salary(models.Model):
+class Salary(models.Model):
 
-#     class Status(models.TextChoices):
-#         PENDING = "PENDING", "Pending"
-#         PAID = "PAID", "Paid"
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        PAID = "PAID", "Paid"
 
-#     employee = models.ForeignKey(
-#         Employee,
-#         on_delete=models.CASCADE,
-#         related_name="payrolls"
-#     )
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="payrolls"
+    )
 
-#     month = models.PositiveSmallIntegerField()
+    generated_at = models.DateTimeField(
+    auto_now_add=True
+    )
 
-#     year = models.PositiveSmallIntegerField()
+    month = models.PositiveSmallIntegerField()
 
-#     gross_salary = models.DecimalField(
-#         max_digits=10,
-#         decimal_places=2
-#     )
+    year = models.PositiveSmallIntegerField()
 
-#     advance_deduction = models.DecimalField(
-#         max_digits=10,
-#         decimal_places=2,
-#         default=0
-#     )
+    # Snapshot of salary type
+    salary_type = models.CharField(
+        max_length=20
+    )
 
-#     net_salary = models.DecimalField(
-#         max_digits=10,
-#         decimal_places=2
-#     )
+    # Attendance Summary
+    working_days = models.PositiveIntegerField(default=0)
 
-#     status = models.CharField(
-#         max_length=20,
-#         choices=Status.choices,
-#         default=Status.PENDING
-#     )
+    present_days = models.PositiveIntegerField(default=0)
 
-#     payment_date = models.DateField(
-#         null=True,
-#         blank=True
-#     )
+    absent_days = models.PositiveIntegerField(default=0)
 
-#     remarks = models.TextField(
-#         blank=True
-#     )
+    # Salary
+    gross_salary = models.DecimalField(
+        max_digits=10,
+        decimal_places=2
+    )
 
-#     created_at = models.DateTimeField(
-#         auto_now_add=True
-#     )
+    advance_deduction = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0
+    )
 
-#     class Meta:
-#         ordering = ["-year", "-month"]
-#         unique_together = ("employee", "month", "year")
+    net_salary = models.DecimalField(
+        max_digits=10,
+        decimal_places=2
+    )
 
-#     def __str__(self):
-#         return f"{self.employee.name} - {self.month}/{self.year}"
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING
+    )
+
+    payment_date = models.DateField(
+        null=True,
+        blank=True
+    )
+
+    leave_days = models.PositiveIntegerField(default=0)
+
+    half_days = models.PositiveIntegerField(default=0)
+
+    remarks = models.TextField(
+        blank=True
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    class Meta:
+        ordering = ["-year", "-month"]
+        unique_together = ("employee", "month", "year")
+
+    def __str__(self):
+        return f"{self.employee.name} - {self.month}/{self.year}"

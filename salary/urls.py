@@ -1,8 +1,8 @@
-# from rest_framework.routers import DefaultRouter
-# from .views import SalaryViewSet
+from rest_framework.routers import DefaultRouter
+from .views import SalaryViewSet
 
-# router = DefaultRouter()
+router = DefaultRouter()
 
-# router.register("salary", SalaryViewSet)
+router.register("salary", SalaryViewSet,basename="salary")
 
-# urlpatterns = router.urls
+urlpatterns = router.urls

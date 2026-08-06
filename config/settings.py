@@ -51,6 +51,7 @@ INSTALLED_APPS = [
 'expenses',
 'reports',
 'advance',
+"drf_spectacular",  
 ]
 
 MIDDLEWARE = [
@@ -138,19 +139,15 @@ AUTH_USER_MODEL = "users.User"
 
 
 REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
 
-'DEFAULT_AUTHENTICATION_CLASSES':(
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+    ),
 
-'rest_framework_simplejwt.authentication.JWTAuthentication',
-
-),
-
-'DEFAULT_PERMISSION_CLASSES':(
-
-'rest_framework.permissions.IsAuthenticated',
-
-)
-
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
 
@@ -176,3 +173,27 @@ STATICFILES_STORAGE = (
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Al Naaz Mandi Management API",
+    "DESCRIPTION": "Backend API",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+
+    "SECURITY": [
+        {
+            "BearerAuth": []
+        }
+    ],
+
+    "COMPONENTS": {
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+            }
+        }
+    },
+}

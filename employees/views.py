@@ -4,7 +4,7 @@ from rest_framework import viewsets
 from .models import Employee
 from .serializers import EmployeeSerializer
 
-from users.permissions import IsAdmin
+from users.permissions import IsAdmin,IsAdminOrStaff
 
 # employee full crud 
 
@@ -14,4 +14,4 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     serializer_class = EmployeeSerializer
 
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrStaff]

@@ -1,12 +1,11 @@
 from django.db import models
 
-class SalaryType(models.TextChoices):
-    MONTHLY = "MONTHLY", "Monthly"
-    DAILY = "DAILY", "Daily"
-    BIWEEKLY = "BIWEEKLY", "15 Days"
-
-
 class Employee(models.Model):
+
+    class SalaryType(models.TextChoices):
+        MONTHLY = "MONTHLY", "Monthly"
+        DAILY = "DAILY", "Daily"
+        BIWEEKLY = "BIWEEKLY", "15 Days"
 
     name = models.CharField(max_length=100)
 
