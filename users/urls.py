@@ -1,15 +1,16 @@
 from django.contrib import admin
 from django.urls import path
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
-from .views import ProfileView,StaffCreateView,StaffListView,StaffDeactivateView,StaffUpdateView
+
+
+from .views import LogoutView,RefreshView,LoginView,ProfileView,StaffCreateView,StaffListView,StaffDeactivateView,StaffUpdateView
 
 urlpatterns = [
-
-    path("login/", TokenObtainPairView.as_view()),
-    path("refresh/", TokenRefreshView.as_view()),
+    path(
+    "refresh/",
+    RefreshView.as_view()
+),
+    path("login/", LoginView.as_view()),
+    path("logout/", LogoutView.as_view()),
     path("profile/", ProfileView.as_view()),
     path("staff/", StaffCreateView.as_view()),
     path("staff/list/", StaffListView.as_view()),
