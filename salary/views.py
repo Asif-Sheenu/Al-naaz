@@ -3,11 +3,17 @@ from rest_framework import viewsets
 from .services import generate_salary
 from employees.models import Employee
 from .models import Salary
-from .serializers import SalarySerializer
+from .serializers import SalarySerializer,SalaryGenerateSerializer ,PayrollDashboardSerializer 
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
 from users.permissions import IsAdminOrStaff
+from django.utils import timezone
+from drf_spectacular.utils import extend_schema
+from advance.models import Advance
+from django.db.models import Sum, Count, Q
+from django.http import FileResponse
+from .pdf import generate_payslip_pdf
 
 
 class SalaryViewSet(viewsets.ModelViewSet):
@@ -88,4 +94,146 @@ class SalaryViewSet(viewsets.ModelViewSet):
         return Response(
             serializer.data,
             status=status.HTTP_200_OK
+        )
+
+
+# mark as paid -----------------------------------------------
+# 
+
+    @action(detail=True, methods=["post"])
+    def pay(self, request, pk=None):
+
+        salary = self.get_object()
+
+        if salary.status == Salary.Status.PAID:
+            return Response(
+                {
+                    "message": "Salary is already paid."
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        salary.status = Salary.Status.PAID
+        salary.payment_date = timezone.now().date()
+        salary.save()
+
+        return Response(
+            {
+                "message": "Salary paid successfully."
+            }
+        )
+
+    # all employee Salary-----------------------------
+    @extend_schema(
+    request=SalaryGenerateSerializer,
+    responses={200: None},
+    )
+    @action(detail=False, methods=["post"])
+    def generate_all(self, request):
+
+        serializer = SalaryGenerateSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(raise_exception=True)
+
+        month = serializer.validated_data["month"]
+        year = serializer.validated_data["year"]
+
+        employees = Employee.objects.filter(
+            is_active=True
+        )
+
+        count = 0
+
+        for employee in employees:
+            generate_salary(
+                employee,
+                month,
+                year
+            )
+            count += 1
+
+        return Response(
+            {
+                "message": "Salary generated successfully.",
+                "employees_processed": count
+            }
+        )
+
+
+
+# admin salary dashboardd =-----------------------------------------
+# 
+    @action(detail=False, methods=["get"])
+    def dashboard(self, request):
+
+        today = timezone.now()
+
+        month = today.month
+        year = today.year    
+        total_employees = Employee.objects.count()
+        active_employees = Employee.objects.filter(is_active=True).count()
+
+        paid_salaries = Salary.objects.filter(
+                        month=month,year=year,status=Salary.Status.PAID).count()
+        pending_salaries = Salary.objects.filter(
+            month=month,
+            year=year,
+            status=Salary.Status.PENDING).count()
+        total_payroll = (
+        Salary.objects.filter(month=month,
+                        year=year).aggregate(total=Sum("gross_salary"))["total"] or 0)
+        total_advance = (Advance.objects.filter(
+                            status=Advance.Status.APPROVED,
+                            date__month=month,
+                            date__year=year).aggregate(total=Sum("amount")
+                            )["total"] or 0)
+        total_net_salary = (Salary.objects.filter(
+                            month=month,year=year).aggregate(
+                            total=Sum("net_salary"))["total"] or 0)
+        employees_with_approved_advance = (Advance.objects.filter(
+                                            status=Advance.Status.APPROVED,
+                                            date__month=month,
+                                            date__year=year).values("employee")
+                                            .distinct()
+                                            .count())
+        pending_advance_requests = (Advance.objects.filter(status=Advance.Status.PENDING
+                                    ).count())                            
+        
+        return Response({
+    "total_employees": total_employees,
+    "active_employees": active_employees,
+    "paid_salaries": paid_salaries,
+    "pending_salaries": pending_salaries,
+    "employees_with_approved_advance": employees_with_approved_advance,
+    "pending_advance_requests": pending_advance_requests,
+    "total_payroll": total_payroll,
+    "total_advance": total_advance,
+    "total_net_salary": total_net_salary,
+    "month": month,
+    "year": year,
+    })
+
+
+
+# salary pdf ==----------------------------
+
+    @action(detail=True, methods=["get"])
+    def payslip(self, request, pk=None):
+
+        salary = self.get_object()
+
+        pdf_buffer = generate_payslip_pdf(salary)
+
+        filename = (
+            f"payslip_{salary.employee.name}_"
+            f"{salary.month}_{salary.year}.pdf"
+        )
+
+        return FileResponse(
+            pdf_buffer,
+            as_attachment=True,
+            filename=filename,
+            content_type="application/pdf",
         )
