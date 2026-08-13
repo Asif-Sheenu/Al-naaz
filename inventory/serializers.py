@@ -37,11 +37,24 @@ class ProductSerializer(serializers.ModelSerializer):
 
 class PurchaseItemSerializer(serializers.ModelSerializer):
 
+    product_name = serializers.CharField(
+        source="product.name",
+        read_only=True
+    )
+
+    unit = serializers.CharField(
+        source="product.unit",
+        read_only=True
+    )
+
     class Meta:
         model = PurchaseItem
+
         fields = [
             "id",
             "product",
+            "product_name",
+            "unit",
             "quantity",
             "total_price",
             "unit_price",
@@ -49,8 +62,10 @@ class PurchaseItemSerializer(serializers.ModelSerializer):
 
         read_only_fields = [
             "id",
+            "product_name",
+            "unit",
             "unit_price",
-        ]     
+        ]
 
     def validate_product(self, value):
 
@@ -77,9 +92,14 @@ class PurchaseItemSerializer(serializers.ModelSerializer):
                 "Total price must be greater than 0."
             )
 
-        return value    
+        return value 
 
 class PurchaseSerializer(serializers.ModelSerializer):
+
+    supplier_name = serializers.CharField(
+        source="supplier.name",
+        read_only=True
+    )
 
     items = PurchaseItemSerializer(
         many=True
@@ -91,6 +111,7 @@ class PurchaseSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "supplier",
+            "supplier_name",
             "purchase_date",
             "invoice_number",
             "remarks",
@@ -100,6 +121,7 @@ class PurchaseSerializer(serializers.ModelSerializer):
 
         read_only_fields = [
             "id",
+            "supplier_name",
             "created_at",
         ]
 

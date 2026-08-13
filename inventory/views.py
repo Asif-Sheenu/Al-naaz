@@ -16,20 +16,20 @@ from rest_framework.response import Response
 from .services.purchase_service import (
     get_supplier_purchase_history
 )
-
+from .pagination import StandardPagination
 
 
 class SupplierViewSet(viewsets.ModelViewSet):
 
     queryset = Supplier.objects.all()
     serializer_class = SupplierSerializer
-
+    pagination_class = StandardPagination
 
 class ProductViewSet(viewsets.ModelViewSet):
 
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
-
+    pagination_class = StandardPagination
 
 class PurchaseViewSet(viewsets.ModelViewSet):
 
@@ -40,7 +40,7 @@ class PurchaseViewSet(viewsets.ModelViewSet):
     )
 
     serializer_class = PurchaseSerializer    
-
+    pagination_class = StandardPagination
 
 
 class StockUsageViewSet(viewsets.ModelViewSet):
@@ -49,8 +49,8 @@ class StockUsageViewSet(viewsets.ModelViewSet):
         "product"
     ).all()
 
+    pagination_class = StandardPagination
     serializer_class = StockUsageSerializer
-
     def perform_create(self, serializer):
 
         usage = serializer.save()
@@ -82,18 +82,29 @@ class LiveStockView(APIView):
 
 class StockLedgerView(APIView):
 
+    pagination_class = StandardPagination
+
     def get(self, request):
 
         ledger = get_stock_ledger(
             request.query_params
         )
 
-        serializer = StockLedgerSerializer(
+        paginator = self.pagination_class()
+
+        page = paginator.paginate_queryset(
             ledger,
+            request
+        )
+
+        serializer = StockLedgerSerializer(
+            page,
             many=True
         )
 
-        return Response(serializer.data)
+        return paginator.get_paginated_response(
+            serializer.data
+        )
 
 
     # -----------------------------------------------------------------------------  
@@ -104,15 +115,26 @@ class StockLedgerView(APIView):
 
 class SupplierPurchaseHistoryView(APIView):
 
+    pagination_class = StandardPagination
+
     def get(self, request, supplier_id):
 
         purchase_items = get_supplier_purchase_history(
             supplier_id
         )
 
-        serializer = SupplierPurchaseHistorySerializer(
+        paginator = self.pagination_class()
+
+        page = paginator.paginate_queryset(
             purchase_items,
+            request
+        )
+
+        serializer = SupplierPurchaseHistorySerializer(
+            page,
             many=True
         )
 
-        return Response(serializer.data)    
+        return paginator.get_paginated_response(
+            serializer.data
+        )
