@@ -17,6 +17,7 @@ from .services.purchase_service import (
     get_supplier_purchase_history
 )
 from .pagination import StandardPagination
+from notifications.services.audit_service import log_activity
 
 
 class SupplierViewSet(viewsets.ModelViewSet):
@@ -39,8 +40,45 @@ class PurchaseViewSet(viewsets.ModelViewSet):
         "supplier"
     )
 
-    serializer_class = PurchaseSerializer    
+    serializer_class = PurchaseSerializer
     pagination_class = StandardPagination
+
+    def perform_create(self, serializer):
+
+        purchase = serializer.save()
+
+        items_data = []
+
+        for item in purchase.items.select_related("product"):
+
+            items_data.append({
+                "product": item.product.name,
+                "quantity": str(item.quantity),
+                "unit_price": str(item.unit_price),
+                "total_price": str(item.total_price),
+            })
+
+        log_activity(
+            user=self.request.user,
+            action="CREATE",
+            module="PURCHASE",
+            object_id=purchase.id,
+            description=(
+                f"Created purchase from "
+                f"{purchase.supplier.name}"
+            ),
+            new_data={
+                "supplier": purchase.supplier.name,
+                "purchase_date": str(
+                    purchase.purchase_date
+                ),
+                "invoice_number": (
+                    purchase.invoice_number
+                ),
+                "remarks": purchase.remarks,
+                "items": items_data,
+            },
+        )
 
 
 class StockUsageViewSet(viewsets.ModelViewSet):

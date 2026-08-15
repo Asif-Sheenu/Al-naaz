@@ -33,7 +33,7 @@ class LoginView(APIView):
 
         if user is None:
             return Response(
-                {"message": "Login umbi.. noki adik kunne !","error": "Invalid username or password"},
+                {"message": "Invalid username or password !","error": "Invalid username or password"},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
