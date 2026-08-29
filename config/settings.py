@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from decouple import config
 import dj_database_url
 from pathlib import Path
+import cloudinary
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -51,6 +53,7 @@ INSTALLED_APPS = [
 'expenses',
 'reports',
 'advance',
+'organization',
 "drf_spectacular",  
 ]
 
@@ -96,7 +99,24 @@ DATABASES = {
     )
 }
 
+# Cloudinary
+CLOUDINARY_CLOUD_NAME = config(
+    "CLOUDINARY_CLOUD_NAME"
+)
 
+CLOUDINARY_API_KEY = config(
+    "CLOUDINARY_API_KEY"
+)
+
+CLOUDINARY_API_SECRET = config(
+    "CLOUDINARY_API_SECRET"
+)
+cloudinary.config(
+    cloud_name=CLOUDINARY_CLOUD_NAME,
+    api_key=CLOUDINARY_API_KEY,
+    api_secret=CLOUDINARY_API_SECRET,
+    secure=True,
+)
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 
@@ -186,6 +206,7 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "Backend API",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    "COMPONENT_SPLIT_REQUEST": True,
 
     "SECURITY": [
         {

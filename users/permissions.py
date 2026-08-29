@@ -31,3 +31,31 @@ class IsAdminOrStaff(BasePermission):
                 request.user.role in ["ADMIN", "STAFF"]
             )
         )        
+
+
+
+class IsManager(BasePermission):
+
+    def has_permission(self, request, view):
+
+        return (
+            request.user.is_authenticated
+            and request.user.role == "MANAGER"
+        )
+
+
+
+class IsAdminOrManager(BasePermission):
+
+    def has_permission(self, request, view):
+
+        return (
+            request.user.is_authenticated
+            and (
+                request.user.is_superuser
+                or request.user.role in [
+                    "ADMIN",
+                    "MANAGER",
+                ]
+            )
+        )        

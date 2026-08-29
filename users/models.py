@@ -6,6 +6,7 @@ class User(AbstractUser):
 
     class Roles(models.TextChoices):
         ADMIN = "ADMIN", "Admin"
+        MANAGER = "MANAGER", "Manager"
         STAFF = "STAFF", "Staff"
 
     role = models.CharField(
@@ -20,7 +21,9 @@ class User(AbstractUser):
         null=True
     )
 
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
 
     def __str__(self):
         return self.username

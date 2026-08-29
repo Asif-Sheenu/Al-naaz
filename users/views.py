@@ -3,8 +3,8 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .permissions import IsAdmin
-from .serializers import UserSerializer,UserUpdateSerializer,LoginSerializer
-from rest_framework import status
+from .serializers import UserSerializer,UserUpdateSerializer,LoginSerializer,ManagedUserCreateSerializer,ManagedUserSerializer
+from rest_framework import status,viewsets
 from rest_framework import generics
 from .models import User
 from django.contrib.auth import authenticate
@@ -12,7 +12,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from drf_spectacular.utils import extend_schema
-
+from .services.user_service import create_managed_user
 
 class LoginView(APIView):
 
@@ -210,3 +210,69 @@ class LogoutView(APIView):
         response.delete_cookie("refresh_token")
 
         return response        
+
+    
+
+class UserManagementViewSet(viewsets.ModelViewSet):
+
+    queryset = (
+        User.objects
+        .filter(
+            role__in=[
+                User.Roles.MANAGER,
+                User.Roles.STAFF,
+            ]
+        )
+        .order_by("username")
+    )
+
+    permission_classes = [IsAdmin]
+
+    def get_serializer_class(self):
+
+        if self.action == "create":
+            return ManagedUserCreateSerializer
+
+        return ManagedUserSerializer
+
+    def create(self, request, *args, **kwargs):
+
+        serializer = self.get_serializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        try:
+            user = create_managed_user(
+                username=serializer.validated_data["username"],
+                password=serializer.validated_data["password"],
+                role=serializer.validated_data["role"],
+                email=serializer.validated_data.get(
+                    "email",
+                    ""
+                ),
+                phone=serializer.validated_data.get(
+                    "phone"
+                ),
+            )
+
+        except ValueError as exc:
+
+            return Response(
+                {
+                    "detail": str(exc)
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        response_serializer = ManagedUserSerializer(
+            user
+        )
+
+        return Response(
+            response_serializer.data,
+            status=status.HTTP_201_CREATED,
+        )    
