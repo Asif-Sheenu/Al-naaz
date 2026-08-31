@@ -179,8 +179,8 @@ class RefreshView(APIView):
                 key="access_token",
                 value=str(access),
                 httponly=True,
-                secure=False,
-                samesite="Lax",
+                secure=True,
+                samesite="None",
                 max_age=60 * 60
             )
 
