@@ -1,6 +1,6 @@
 from django.db import models
 
-from organization.models import Branch
+from organization.models import Branch,Department
 
 
 class Employee(models.Model):
@@ -27,6 +27,14 @@ class Employee(models.Model):
 
     address = models.TextField(
         blank=True
+    )
+
+    department = models.ForeignKey(
+    Department,
+    on_delete=models.PROTECT,
+    related_name="employees",
+    null=True,
+    blank=True,
     )
 
     designation = models.CharField(
@@ -145,3 +153,74 @@ class EmployeeIdentityProof(models.Model):
             f"{self.employee.name} - "
             f"{self.get_document_type_display()}"
         )        
+
+
+
+
+    #  ------------------------------------------------------------------------------------------------------------- 
+    # 
+
+class EmployeeSalaryHistory(models.Model):
+
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.PROTECT,
+        related_name="salary_history",
+    )
+
+    salary_type = models.CharField(
+        max_length=20,
+        choices=Employee.SalaryType.choices,
+    )
+
+    monthly_salary = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
+
+    daily_wage = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
+
+    biweekly_salary = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
+
+    effective_from = models.DateField()
+
+    effective_to = models.DateField(
+        null=True,
+        blank=True,
+    )
+
+    reason = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+
+    created_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.PROTECT,
+        related_name="salary_changes",
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        ordering = ["-effective_from"]
+
+    def __str__(self):
+        return (
+            f"{self.employee.name} - "
+            f"{self.effective_from}"
+        )   

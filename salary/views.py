@@ -1,63 +1,119 @@
-from django.shortcuts import render
 from rest_framework import viewsets
-from .services import generate_salary
+from .services import (
+    generate_salary,
+    generate_all_salaries,
+    mark_salary_as_paid,
+    get_payroll_dashboard)
 from employees.models import Employee
 from .models import Salary
 from .serializers import SalarySerializer,SalaryGenerateSerializer ,PayrollDashboardSerializer 
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
-from users.permissions import IsAdminOrStaff
+from .permissions import CanManageSalary
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from advance.models import Advance
-from django.db.models import Sum, Count, Q
+from django.db.models import Sum
 from django.http import FileResponse
 from .pdf import generate_payslip_pdf
+from organization.services.access_service import get_accessible_branches
 
-
-class SalaryViewSet(viewsets.ModelViewSet):
+class SalaryViewSet(viewsets.ReadOnlyModelViewSet):
 
     serializer_class = SalarySerializer
 
-    permission_classes = [IsAdminOrStaff]
+    permission_classes = [CanManageSalary]
 
     def get_queryset(self):
 
-        queryset = Salary.objects.select_related(
-            "employee"
-        ).order_by("-year", "-month")
+        user = self.request.user
 
-        employee = self.request.query_params.get("employee")
-        month = self.request.query_params.get("month")
-        year = self.request.query_params.get("year")
-        status = self.request.query_params.get("status")
-        search = self.request.query_params.get("search")
+        queryset = Salary.objects.select_related(
+            "employee",
+            "employee__branch",
+        ).order_by(
+            "-year",
+            "-month",
+        )
+
+        # --------------------------------
+        # Branch access
+        # --------------------------------
+
+        if not (
+            user.is_superuser
+            or user.role == "ADMIN"
+        ):
+
+            accessible_branch_ids = (
+                get_accessible_branches(user)
+                .values_list(
+                    "id",
+                    flat=True,
+                )
+            )
+
+            queryset = queryset.filter(
+                employee__branch_id__in=accessible_branch_ids
+            )
+
+        # --------------------------------
+        # Filters
+        # --------------------------------
+
+        employee = self.request.query_params.get(
+            "employee"
+        )
+
+        month = self.request.query_params.get(
+            "month"
+        )
+
+        year = self.request.query_params.get(
+            "year"
+        )
+
+        salary_status = self.request.query_params.get(
+            "status"
+        )
+
+        search = self.request.query_params.get(
+            "search"
+        )
 
         if employee:
-            queryset = queryset.filter(employee_id=employee)
+            queryset = queryset.filter(
+                employee_id=employee
+            )
 
         if month:
-            queryset = queryset.filter(month=month)
+            queryset = queryset.filter(
+                month=month
+            )
 
         if year:
-            queryset = queryset.filter(year=year)
+            queryset = queryset.filter(
+                year=year
+            )
 
-        if status:
-            queryset = queryset.filter(status=status)
+        if salary_status:
+            queryset = queryset.filter(
+                status=salary_status
+            )
 
         if search:
             queryset = queryset.filter(
                 employee__name__icontains=search
             )
- 
+
         return queryset
 
     @action(
     detail=False,
     methods=["post"],
-    permission_classes=[IsAdminOrStaff]
-    )
+    permission_classes=[CanManageSalary],
+)
     def generate(self, request):
 
         employee_id = request.data.get("employee")
@@ -67,60 +123,111 @@ class SalaryViewSet(viewsets.ModelViewSet):
         if not employee_id or not month or not year:
             return Response(
                 {
-                    "error": "employee, month and year are required."
+                    "error": (
+                        "employee, month and year "
+                        "are required."
+                    )
                 },
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
-            employee = Employee.objects.get(id=employee_id)
+            employee = Employee.objects.select_related(
+                "branch"
+            ).get(
+                id=employee_id,
+                is_active=True,
+            )
 
         except Employee.DoesNotExist:
             return Response(
                 {
                     "error": "Employee not found."
                 },
-                status=status.HTTP_404_NOT_FOUND
+                status=status.HTTP_404_NOT_FOUND,
             )
+
+        # --------------------------------
+        # Branch access
+        # --------------------------------
+
+        user = request.user
+
+        if not (
+            user.is_superuser
+            or user.role == "ADMIN"
+        ):
+
+            accessible_branch_ids = (
+                get_accessible_branches(user)
+                .values_list(
+                    "id",
+                    flat=True,
+                )
+            )
+
+            if employee.branch_id not in accessible_branch_ids:
+                return Response(
+                    {
+                        "error": (
+                            "You do not have access to "
+                            "this employee's branch."
+                        )
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        # --------------------------------
+        # Generate salary
+        # --------------------------------
 
         salary = generate_salary(
             employee,
             int(month),
-            int(year)
+            int(year),
         )
 
         serializer = self.get_serializer(salary)
 
         return Response(
             serializer.data,
-            status=status.HTTP_200_OK
+            status=status.HTTP_200_OK,
         )
 
 
 # mark as paid -----------------------------------------------
 # 
-
-    @action(detail=True, methods=["post"])
+    @extend_schema(
+    request=None,
+    responses=SalarySerializer,
+    )
+    @action(
+        detail=True,
+        methods=["post"],
+    )
     def pay(self, request, pk=None):
 
         salary = self.get_object()
 
-        if salary.status == Salary.Status.PAID:
+        try:
+            salary = mark_salary_as_paid(salary)
+
+        except ValueError as exc:
             return Response(
                 {
-                    "message": "Salary is already paid."
+                    "error": str(exc)
                 },
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-        salary.status = Salary.Status.PAID
-        salary.payment_date = timezone.now().date()
-        salary.save()
+        serializer = self.get_serializer(salary)
 
         return Response(
             {
-                "message": "Salary paid successfully."
-            }
+                "message": "Salary paid successfully.",
+                "salary": serializer.data,
+            },
+            status=status.HTTP_200_OK,
         )
 
     # all employee Salary-----------------------------
@@ -135,86 +242,59 @@ class SalaryViewSet(viewsets.ModelViewSet):
             data=request.data
         )
 
-        serializer.is_valid(raise_exception=True)
+        serializer.is_valid(
+            raise_exception=True
+        )
 
         month = serializer.validated_data["month"]
         year = serializer.validated_data["year"]
 
-        employees = Employee.objects.filter(
-            is_active=True
+        result = generate_all_salaries(
+            user=request.user,
+            month=month,
+            year=year,
         )
 
-        count = 0
-
-        for employee in employees:
-            generate_salary(
-                employee,
-                month,
-                year
-            )
-            count += 1
+        salary_serializer = SalarySerializer(
+            result["salaries"],
+            many=True,
+        )
 
         return Response(
             {
                 "message": "Salary generated successfully.",
-                "employees_processed": count
-            }
+                "employees_processed": result["employees_processed"],
+                "salaries": salary_serializer.data,
+            },
+            status=status.HTTP_200_OK,
         )
-
 
 
 # admin salary dashboardd =-----------------------------------------
 # 
-    @action(detail=False, methods=["get"])
+    @extend_schema(
+    responses=PayrollDashboardSerializer,
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+    )
     def dashboard(self, request):
 
         today = timezone.now()
 
-        month = today.month
-        year = today.year    
-        total_employees = Employee.objects.count()
-        active_employees = Employee.objects.filter(is_active=True).count()
+        result = get_payroll_dashboard(
+            user=request.user,
+            month=today.month,
+            year=today.year,
+        )
 
-        paid_salaries = Salary.objects.filter(
-                        month=month,year=year,status=Salary.Status.PAID).count()
-        pending_salaries = Salary.objects.filter(
-            month=month,
-            year=year,
-            status=Salary.Status.PENDING).count()
-        total_payroll = (
-        Salary.objects.filter(month=month,
-                        year=year).aggregate(total=Sum("gross_salary"))["total"] or 0)
-        total_advance = (Advance.objects.filter(
-                            status=Advance.Status.APPROVED,
-                            date__month=month,
-                            date__year=year).aggregate(total=Sum("amount")
-                            )["total"] or 0)
-        total_net_salary = (Salary.objects.filter(
-                            month=month,year=year).aggregate(
-                            total=Sum("net_salary"))["total"] or 0)
-        employees_with_approved_advance = (Advance.objects.filter(
-                                            status=Advance.Status.APPROVED,
-                                            date__month=month,
-                                            date__year=year).values("employee")
-                                            .distinct()
-                                            .count())
-        pending_advance_requests = (Advance.objects.filter(status=Advance.Status.PENDING
-                                    ).count())                            
-        
-        return Response({
-    "total_employees": total_employees,
-    "active_employees": active_employees,
-    "paid_salaries": paid_salaries,
-    "pending_salaries": pending_salaries,
-    "employees_with_approved_advance": employees_with_approved_advance,
-    "pending_advance_requests": pending_advance_requests,
-    "total_payroll": total_payroll,
-    "total_advance": total_advance,
-    "total_net_salary": total_net_salary,
-    "month": month,
-    "year": year,
-    })
+        serializer = PayrollDashboardSerializer(result)
 
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
 
 
 # salary pdf ==----------------------------

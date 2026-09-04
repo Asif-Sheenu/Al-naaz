@@ -4,9 +4,9 @@ from rest_framework.response import Response
 
 from users.models import User
 from users.permissions import IsAdmin
-
-from .models import Branch, Company
-from .serializers import BranchSerializer, CompanySerializer
+from drf_spectacular.utils import extend_schema
+from .models import Branch, Company,Department
+from .serializers import BranchSerializer, CompanySerializer,AssignUserSerializer,RemoveUserSerializer,DepartmentSerializer
 from .services.user_branch_service import (
     assign_user_to_branch,
     remove_user_from_branch,
@@ -15,6 +15,8 @@ from .services.user_branch_service import (
 from .permissions import (
     CanAccessBranch,
     CanManageBranches,
+    CanManageDepartments,
+    CanAccessDepartment,
 )
 
 class CompanyViewSet(viewsets.ModelViewSet):
@@ -65,7 +67,10 @@ class BranchViewSet(viewsets.ModelViewSet):
             .prefetch_related("users")
             .order_by("name")
         )
-
+    
+    @extend_schema(
+    request=AssignUserSerializer,
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -120,7 +125,9 @@ class BranchViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
-
+    @extend_schema(
+        request=RemoveUserSerializer,
+        )
     @action(
         detail=True,
         methods=["post"],
@@ -167,3 +174,68 @@ class BranchViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
+
+
+
+
+class DepartmentViewSet(viewsets.ModelViewSet):
+
+    serializer_class = DepartmentSerializer
+
+    def get_permissions(self):
+
+        if self.action in ["list", "retrieve"]:
+            permission_classes = [CanAccessDepartment]
+        else:
+            permission_classes = [CanManageDepartments]
+
+        return [
+            permission()
+            for permission in permission_classes
+        ]
+
+    def get_queryset(self):
+
+        user = self.request.user
+
+        queryset = (
+            Department.objects
+            .select_related("branch")
+            .order_by("name")
+        )
+
+        # ==========================================
+        # BRANCH ACCESS
+        # ==========================================
+
+        if not (
+            user.is_superuser
+            or user.role == "ADMIN"
+        ):
+
+            accessible_branch_ids = (
+                get_accessible_branches(user)
+                .values_list(
+                    "id",
+                    flat=True,
+                )
+            )
+
+            queryset = queryset.filter(
+                branch_id__in=accessible_branch_ids
+            )
+
+        # ==========================================
+        # BRANCH FILTER
+        # ==========================================
+
+        branch_id = self.request.query_params.get(
+            "branch"
+        )
+
+        if branch_id:
+            queryset = queryset.filter(
+                branch_id=branch_id
+            )
+
+        return queryset

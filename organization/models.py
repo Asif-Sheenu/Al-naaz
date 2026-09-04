@@ -98,3 +98,32 @@ class Branch(models.Model):
 
     def __str__(self):
         return f"{self.company.name} - {self.name}"
+
+
+
+class Department(models.Model):
+
+    branch = models.ForeignKey(
+        Branch,
+        on_delete=models.PROTECT,
+        related_name="departments",
+    )
+
+    name = models.CharField(
+        max_length=100,
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["branch", "name"],
+                name="unique_department_per_branch",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.branch.name} - {self.name}"

@@ -15,9 +15,18 @@ class SalarySerializer(serializers.ModelSerializer):
 
 class SalaryGenerateSerializer(serializers.Serializer):
 
-    month = serializers.IntegerField(min_value=1, max_value=12)
+    employee = serializers.IntegerField(
+        min_value=1
+    )
 
-    year = serializers.IntegerField(min_value=2000)        
+    month = serializers.IntegerField(
+        min_value=1,
+        max_value=12
+    )
+
+    year = serializers.IntegerField(
+        min_value=2000
+    )
 
 
 

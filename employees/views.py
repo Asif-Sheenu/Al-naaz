@@ -9,13 +9,16 @@ from drf_spectacular.utils import extend_schema,OpenApiTypes
 from organization.services.access_service import (
     get_accessible_branches,
 )
-
+from .services import create_salary_revision
 from .models import Employee,EmployeeIdentityProof
-from .permissions import CanManageEmployees
+from .permissions import (
+    CanManageEmployees,
+    CanManageEmployeeSalary,)
 from .serializers import (
     EmployeeSerializer,
     EmployeeIdentityProofSerializer,
-    EmployeeIdentityProofUploadSerializer
+    EmployeeIdentityProofUploadSerializer,
+    EmployeeSalaryHistorySerializer
 )
 from .services.identity_proof_service import (
     create_identity_proof,
@@ -37,27 +40,74 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
         queryset = (
             Employee.objects
-            .select_related("branch")
+            .select_related(
+                "branch",
+                "department",
+            )
             .order_by("-id")
         )
 
-        if (
+        # ---------------------------------
+        # Branch access
+        # ---------------------------------
+
+        if not (
             user.is_superuser
             or user.role == "ADMIN"
         ):
-            return queryset
 
-        accessible_branch_ids = (
-            get_accessible_branches(user)
-            .values_list(
-                "id",
-                flat=True,
+            accessible_branch_ids = (
+                get_accessible_branches(user)
+                .values_list(
+                    "id",
+                    flat=True,
+                )
             )
+
+            queryset = queryset.filter(
+                branch_id__in=accessible_branch_ids
+            )
+
+        # ---------------------------------
+        # Branch filter
+        # ---------------------------------
+
+        branch_id = self.request.query_params.get(
+            "branch"
         )
 
-        return queryset.filter(
-            branch_id__in=accessible_branch_ids
+        if branch_id:
+            queryset = queryset.filter(
+                branch_id=branch_id
+            )
+
+        # ---------------------------------
+        # Department filter
+        # ---------------------------------
+
+        department_id = self.request.query_params.get(
+            "department"
         )
+
+        if department_id:
+            queryset = queryset.filter(
+                department_id=department_id
+            )
+
+        # ---------------------------------
+        # Designation filter
+        # ---------------------------------
+
+        designation = self.request.query_params.get(
+            "designation"
+        )
+
+        if designation:
+            queryset = queryset.filter(
+                designation__iexact=designation
+            )
+
+        return queryset
 
     @extend_schema(
     request=EmployeeIdentityProofUploadSerializer,
@@ -232,4 +282,111 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 "url": url,
             },
             status=status.HTTP_200_OK,
+        )
+
+
+    @extend_schema(
+    request=EmployeeSalaryHistorySerializer,
+    responses=EmployeeSalaryHistorySerializer,
+    )
+    @action(
+        detail=True,
+        methods=["get", "post"],
+        url_path="salary-history",
+    )
+    def salary_history(self, request, pk=None):
+
+        employee = self.get_object()
+
+        # ==========================================
+        # GET → Salary History
+        # ==========================================
+
+        if request.method == "GET":
+
+            history = (
+                employee.salary_history
+                .select_related("created_by")
+                .order_by("effective_from")
+            )
+
+            serializer = EmployeeSalaryHistorySerializer(
+                history,
+                many=True,
+            )
+
+            return Response(
+                serializer.data,
+                status=status.HTTP_200_OK,
+            )
+
+        # ==========================================
+        # POST → Create Salary Revision
+        # ==========================================
+
+        permission = CanManageEmployeeSalary()
+
+        if not permission.has_object_permission(
+            request,
+            self,
+            employee,
+        ):
+            return Response(
+                {
+                    "detail": (
+                        "You do not have permission "
+                        "to change this employee's salary."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = EmployeeSalaryHistorySerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        try:
+
+            salary_history = create_salary_revision(
+                employee=employee,
+                salary_type=serializer.validated_data["salary_type"],
+                monthly_salary=serializer.validated_data.get(
+                    "monthly_salary"
+                ),
+                daily_wage=serializer.validated_data.get(
+                    "daily_wage"
+                ),
+                biweekly_salary=serializer.validated_data.get(
+                    "biweekly_salary"
+                ),
+                effective_from=serializer.validated_data[
+                    "effective_from"
+                ],
+                reason=serializer.validated_data.get(
+                    "reason",
+                    "",
+                ),
+                created_by=request.user,
+            )
+
+        except ValueError as exc:
+
+            return Response(
+                {
+                    "detail": str(exc)
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        response_serializer = EmployeeSalaryHistorySerializer(
+            salary_history
+        )
+
+        return Response(
+            response_serializer.data,
+            status=status.HTTP_201_CREATED,
         )

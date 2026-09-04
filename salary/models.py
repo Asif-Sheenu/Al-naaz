@@ -10,12 +10,8 @@ class Salary(models.Model):
 
     employee = models.ForeignKey(
         Employee,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="payrolls"
-    )
-
-    generated_at = models.DateTimeField(
-    auto_now_add=True
     )
 
     month = models.PositiveSmallIntegerField()
@@ -40,10 +36,22 @@ class Salary(models.Model):
         decimal_places=2
     )
 
+    attendance_deduction = models.DecimalField(
+    max_digits=10,
+    decimal_places=2,
+    default=0,
+    )
+
     advance_deduction = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         default=0
+    )
+
+    other_deduction = models.DecimalField(
+    max_digits=10,
+    decimal_places=2,
+    default=0,
     )
 
     net_salary = models.DecimalField(
@@ -76,7 +84,29 @@ class Salary(models.Model):
 
     class Meta:
         ordering = ["-year", "-month"]
-        unique_together = ("employee", "month", "year")
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "month", "year"],
+                name="unique_salary_per_employee_month",
+            )
+        ]
+
+        indexes = [
+            models.Index(
+                fields=["year", "month"],
+                name="salary_year_month_idx",
+            ),
+            models.Index(
+                fields=["employee", "year", "month"],
+                name="salary_employee_period_idx",
+            ),
+            models.Index(
+                fields=["status", "year", "month"],
+                name="salary_status_period_idx",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.employee.name} - {self.month}/{self.year}"
+
