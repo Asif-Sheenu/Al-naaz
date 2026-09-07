@@ -13,6 +13,12 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from drf_spectacular.utils import extend_schema
 from .services.user_service import create_managed_user
+from users.permissions import (
+    IsAdminOrManager,
+    IsAdminOrStaff,
+)
+
+
 
 class LoginView(APIView):
 
@@ -73,7 +79,7 @@ class LoginView(APIView):
 
 class ProfileView(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = []
 
     def get(self, request):
 
@@ -112,7 +118,7 @@ class StaffCreateView(APIView):
 class StaffListView(generics.ListAPIView):
 
     serializer_class = UserSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = []
 
     def get_queryset(self):
         return User.objects.filter(role="STAFF" )       
@@ -124,7 +130,7 @@ class StaffUpdateView(generics.UpdateAPIView):
 
     queryset = User.objects.filter(role="STAFF")
     serializer_class = UserUpdateSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrManager]
 
 
 # delete staff 
@@ -226,7 +232,7 @@ class UserManagementViewSet(viewsets.ModelViewSet):
         .order_by("username")
     )
 
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrManager]
 
     def get_serializer_class(self):
 
