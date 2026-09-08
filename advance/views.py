@@ -1,16 +1,21 @@
 from django.db import transaction
 from django.utils import timezone
-
+from users.permissions import (
+    IsAdminOrManager,
+    IsAdminOrStaff,
+)
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-
+from organization.services.access_service import (
+    get_accessible_branches,
+)
+from drf_spectacular.utils import extend_schema
 from .models import Advance
 from .serializers import AdvanceSerializer
 from .pagination import StandardPagination
-
+from django.shortcuts import get_object_or_404
 from notifications.services.audit_service import log_activity
-from users.permissions import IsAdmin, IsAdminOrStaff
 
 
 class AdvanceViewSet(viewsets.ModelViewSet):
@@ -27,18 +32,44 @@ class AdvanceViewSet(viewsets.ModelViewSet):
         "options",
     ]
 
+    def user_can_access_advance(self, user, advance):
+
+        if user.is_superuser or user.role == "ADMIN":
+            return True
+
+        return get_accessible_branches(user).filter(
+            pk=advance.employee.branch_id
+        ).exists()
+
     def get_queryset(self):
+        user = self.request.user
 
         queryset = (
             Advance.objects
             .select_related(
                 "employee",
+                "employee__branch",
                 "requested_by",
                 "approved_by",
             )
             .order_by("-date")
         )
 
+        # Branch access
+        if not (
+            user.is_superuser
+            or user.role == "ADMIN"
+        ):
+            accessible_branch_ids = (
+                get_accessible_branches(user)
+                .values_list("id", flat=True)
+            )
+
+            queryset = queryset.filter(
+                employee__branch_id__in=accessible_branch_ids
+            )
+
+        # Existing filters
         employee = self.request.query_params.get("employee")
         month = self.request.query_params.get("month")
         year = self.request.query_params.get("year")
@@ -64,10 +95,7 @@ class AdvanceViewSet(viewsets.ModelViewSet):
 
         if start_date and end_date:
             queryset = queryset.filter(
-                date__range=[
-                    start_date,
-                    end_date,
-                ]
+                date__range=[start_date, end_date]
             )
 
         if search:
@@ -80,7 +108,7 @@ class AdvanceViewSet(viewsets.ModelViewSet):
                 status=status_filter
             )
 
-        return queryset
+        return queryset                                         
 
     # --------------------------------------------------
     # CREATE ADVANCE
@@ -115,23 +143,38 @@ class AdvanceViewSet(viewsets.ModelViewSet):
     # APPROVE ADVANCE
     # --------------------------------------------------
 
+    @extend_schema(
+        request=None,
+        )
     @action(
         detail=True,
         methods=["post"],
-        permission_classes=[IsAdmin],
+        permission_classes=[IsAdminOrManager],
     )
     @transaction.atomic
     def approve(self, request, pk=None):
 
-        advance = (
+        advance = get_object_or_404(
             Advance.objects
             .select_for_update()
-            .select_related("employee")
-            .get(pk=pk)
+            .select_related("employee", "employee__branch"),
+            pk=pk,
         )
 
+        if not self.user_can_access_advance(
+            request.user,
+            advance,
+        ):
+            return Response(
+                {
+                    "message": (
+                        "You do not have access to this "
+                        "advance request."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
         if advance.status != Advance.Status.PENDING:
-
             return Response(
                 {
                     "message": (
@@ -141,7 +184,6 @@ class AdvanceViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
         advance.status = Advance.Status.APPROVED
         advance.approved_by = request.user
         advance.approved_at = timezone.now()
@@ -188,23 +230,42 @@ class AdvanceViewSet(viewsets.ModelViewSet):
     # REJECT ADVANCE
     # --------------------------------------------------
 
+    @extend_schema(
+        request=None,
+        )
     @action(
         detail=True,
         methods=["post"],
-        permission_classes=[IsAdmin],
+        permission_classes=[IsAdminOrManager],
     )
     @transaction.atomic
     def reject(self, request, pk=None):
 
-        advance = (
+        advance = get_object_or_404(
             Advance.objects
             .select_for_update()
-            .select_related("employee")
-            .get(pk=pk)
+            .select_related(
+                "employee",
+                "employee__branch",
+            ),
+            pk=pk,
         )
 
-        if advance.status != Advance.Status.PENDING:
+        if not self.user_can_access_advance(
+            request.user,
+            advance,
+        ):
+            return Response(
+                {
+                    "message": (
+                        "You do not have access to this "
+                        "advance request."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )   
 
+        if advance.status != Advance.Status.PENDING:
             return Response(
                 {
                     "message": (
@@ -213,8 +274,7 @@ class AdvanceViewSet(viewsets.ModelViewSet):
                     )
                 },
                 status=status.HTTP_400_BAD_REQUEST,
-            )
-
+            )        
         advance.status = Advance.Status.REJECTED
         advance.approved_by = request.user
         advance.approved_at = timezone.now()

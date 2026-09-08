@@ -10,7 +10,8 @@ from .views import (
     ExpenseReportView,
     MonthlyExpenseReportView,
     DailyExpenseReportView,
-    YearlyExpenseReportView
+    YearlyExpenseReportView,
+    FinancialAccountViewSet
 )
 
 
@@ -28,6 +29,11 @@ router.register(
     basename="expense"
 )
 
+router.register(
+    "accounts",
+    FinancialAccountViewSet,
+    basename="financial-account",
+)
 
 urlpatterns = [
     path("", include(router.urls)),

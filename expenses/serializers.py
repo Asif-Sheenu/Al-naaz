@@ -1,10 +1,87 @@
 from rest_framework import serializers
-
+from organization.models import Branch
 from .models import (
     ExpenseCategory,
     Expense,
     PettyCashLedger,
+    FinancialAccount,
+    FinancialTransaction
 )
+from organization.services.access_service import (
+    get_accessible_branches,
+)
+
+
+
+class FinancialAccountSerializer(serializers.ModelSerializer):
+
+    branch_name = serializers.CharField(
+        source="branch.name",
+        read_only=True,
+    )
+
+    created_by_name = serializers.CharField(
+    source="created_by.username",
+    read_only=True,
+    )
+
+    class Meta:
+        model = FinancialAccount
+
+        fields = [
+            "id",
+            "branch",
+            "branch_name",
+            "name",
+            "created_by_name",
+            "account_type",
+            "opening_balance",
+            "opening_balance_date",
+            "is_active",
+            "created_by",
+            "created_at",
+            "updated_at",
+        ]
+
+        read_only_fields = [
+            "id",
+            "branch_name",
+            "created_by",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate_branch(self, branch):
+
+        request = self.context.get("request")
+
+        if not request:
+            return branch
+
+        user = request.user
+
+        if user.is_superuser or user.role == "ADMIN":
+            return branch
+
+        if not get_accessible_branches(user).filter(
+            pk=branch.pk
+        ).exists():
+
+            raise serializers.ValidationError(
+                "You do not have access to this branch."
+            )
+
+        return branch
+
+    def validate_opening_balance(self, value):
+
+        if value < 0:
+            raise serializers.ValidationError(
+                "Opening balance cannot be negative."
+            )
+
+        return value
+
 
 
 class ExpenseCategorySerializer(serializers.ModelSerializer):

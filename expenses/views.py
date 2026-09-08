@@ -9,6 +9,11 @@ from .models import (
     ExpenseCategory,
     Expense,
     PettyCashLedger,
+    FinancialAccount,
+    FinancialTransaction
+)
+from .services.financial_account_service import (
+    create_financial_account,
 )
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from calendar import monthrange
@@ -18,14 +23,69 @@ from .serializers import (
     ExpenseSerializer,
     PettyCashLedgerSerializer,
     AddPettyCashSerializer,
-    ExpenseReportSerializer
+    ExpenseReportSerializer,
+    FinancialAccountSerializer
 )
+from django.db.models import Sum, Q
 from notifications.services.audit_service import log_activity
 from .services.petty_cash_service import (
     add_cash,
     create_expense,
     update_expense
 )
+from organization.services.access_service import (
+    get_accessible_branches,
+)
+
+
+
+
+class FinancialAccountViewSet(viewsets.ModelViewSet):
+
+    serializer_class = FinancialAccountSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+
+        user = self.request.user
+
+        queryset = (
+            FinancialAccount.objects
+            .select_related("branch", "branch__company", "created_by")
+            .order_by("branch__name", "name")
+        )
+
+        if user.is_superuser or user.role == "ADMIN":
+            return queryset
+
+        accessible_branch_ids = (
+            get_accessible_branches(user)
+            .values_list("id", flat=True)
+        )
+
+        queryset = queryset.filter(
+            branch_id__in=accessible_branch_ids
+        )
+
+        return queryset
+
+    def perform_create(self, serializer):
+
+        validated_data = serializer.validated_data
+
+        account = create_financial_account(
+            branch=validated_data["branch"],
+            name=validated_data["name"],
+            account_type=validated_data["account_type"],
+            opening_balance=validated_data["opening_balance"],
+            opening_balance_date=validated_data[
+                "opening_balance_date"
+            ],
+            created_by=self.request.user,
+        )
+
+        serializer.instance = account
+
 
 
 # =========================================================

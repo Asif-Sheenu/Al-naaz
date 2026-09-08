@@ -109,27 +109,29 @@ class SalaryViewSet(viewsets.ReadOnlyModelViewSet):
 
         return queryset
 
+
+    @extend_schema(
+    request=SalaryGenerateSerializer,
+    responses=SalarySerializer,
+    )
     @action(
-    detail=False,
-    methods=["post"],
-    permission_classes=[CanManageSalary],
-)
+        detail=False,
+        methods=["post"],
+        permission_classes=[CanManageSalary],
+    )
     def generate(self, request):
 
-        employee_id = request.data.get("employee")
-        month = request.data.get("month")
-        year = request.data.get("year")
+        serializer = SalaryGenerateSerializer(
+            data=request.data
+        )
 
-        if not employee_id or not month or not year:
-            return Response(
-                {
-                    "error": (
-                        "employee, month and year "
-                        "are required."
-                    )
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        employee_id = serializer.validated_data["employee"]
+        month = serializer.validated_data["month"]
+        year = serializer.validated_data["year"]
 
         try:
             employee = Employee.objects.select_related(
@@ -181,11 +183,20 @@ class SalaryViewSet(viewsets.ReadOnlyModelViewSet):
         # Generate salary
         # --------------------------------
 
-        salary = generate_salary(
-            employee,
-            int(month),
-            int(year),
-        )
+        try:
+            salary = generate_salary(
+                employee,
+                month,
+                year,
+            )
+
+        except ValueError as exc:
+            return Response(
+                {
+                    "error": str(exc)
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         serializer = self.get_serializer(salary)
 
@@ -193,8 +204,6 @@ class SalaryViewSet(viewsets.ReadOnlyModelViewSet):
             serializer.data,
             status=status.HTTP_200_OK,
         )
-
-
 # mark as paid -----------------------------------------------
 # 
     @extend_schema(

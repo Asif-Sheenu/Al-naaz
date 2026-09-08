@@ -96,14 +96,14 @@ class DepartmentSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "branch",
-            "branch_name"
+            "branch_name",
             "name",
             "is_active",
         ]
 
         read_only_fields = [
             "id",
-            "branch_name"
+            "branch_name",
         ]
 
 

@@ -107,6 +107,14 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 designation__iexact=designation
             )
 
+        is_active = self.request.query_params.get("is_active")
+
+        if is_active:
+
+            is_active =is_active.lower()=="true"
+
+            queryset=queryset.filter(is_active = is_active)
+
         return queryset
 
     @extend_schema(
