@@ -576,3 +576,169 @@ class AttendanceViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
+
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="month",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                required=True,
+                description="Month (1-12).",
+            ),
+            OpenApiParameter(
+                name="year",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                required=True,
+                description="Year.",
+            ),
+        ],
+        responses=OpenApiTypes.OBJECT,
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path=r"employee-summary/(?P<employee_id>\d+)",
+    )
+    def employee_summary(self, request, employee_id=None):
+
+        month = request.query_params.get("month")
+        year = request.query_params.get("year")
+
+        # -----------------------------------------
+        # Validate parameters
+        # -----------------------------------------
+
+        if not month or not year:
+            return Response(
+                {
+                    "detail": "month and year are required."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            month = int(month)
+            year = int(year)
+            employee_id = int(employee_id)
+
+        except ValueError:
+            return Response(
+                {
+                    "detail": (
+                        "employee_id, month and year "
+                        "must be valid integers."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if month < 1 or month > 12:
+            return Response(
+                {
+                    "detail": "month must be between 1 and 12."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # -----------------------------------------
+        # Get employee
+        # -----------------------------------------
+
+        try:
+            employee = (
+                Employee.objects
+                .select_related("branch")
+                .get(
+                    id=employee_id,
+                    is_active=True,
+                )
+            )
+
+        except Employee.DoesNotExist:
+            return Response(
+                {
+                    "detail": "Employee not found."
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # -----------------------------------------
+        # Check branch access
+        # -----------------------------------------
+
+        user = request.user
+
+        if not (
+            user.is_superuser
+            or user.role == "ADMIN"
+        ):
+
+            if not get_accessible_branches(user).filter(
+                pk=employee.branch_id
+            ).exists():
+
+                return Response(
+                    {
+                        "detail": (
+                            "You do not have access "
+                            "to this employee."
+                        )
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        # -----------------------------------------
+        # Get employee attendance
+        # -----------------------------------------
+
+        attendance_records = Attendance.objects.filter(
+            employee_id=employee.id,
+            date__year=year,
+            date__month=month,
+        )
+
+        # -----------------------------------------
+        # Calculate summary
+        # -----------------------------------------
+
+        present = attendance_records.filter(
+            status=Attendance.Status.PRESENT
+        ).count()
+
+        absent = attendance_records.filter(
+            status=Attendance.Status.ABSENT
+        ).count()
+
+        half_day = attendance_records.filter(
+            status=Attendance.Status.HALF_DAY
+        ).count()
+
+        leave = attendance_records.filter(
+            status=Attendance.Status.LEAVE
+        ).count()
+
+        total_marked_days = attendance_records.count()
+
+        # -----------------------------------------
+        # Response
+        # -----------------------------------------
+
+        return Response(
+            {
+                "employee": employee.id,
+                "employee_name": employee.name,
+                "designation": employee.designation,
+                "branch": employee.branch_id,
+                "month": month,
+                "year": year,
+                "present": present,
+                "absent": absent,
+                "half_day": half_day,
+                "leave": leave,
+                "total_marked_days": total_marked_days,
+            },
+            status=status.HTTP_200_OK,
+        )    
