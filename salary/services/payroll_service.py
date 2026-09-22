@@ -19,11 +19,10 @@ def generate_all_salaries(
     Generate salary for all active employees
     accessible to the given user.
 
-    Employees whose salary already exists for the selected
-    month/year are skipped.
+    Existing salaries for the selected month/year
+    are skipped.
 
-    Employees with missing required salary data are also skipped,
-    while the remaining employees continue processing.
+    Employees without required salary data are skipped.
     """
 
     employees = Employee.objects.filter(
@@ -38,6 +37,7 @@ def generate_all_salaries(
         user.is_superuser
         or user.role == "ADMIN"
     ):
+
         accessible_branch_ids = (
             get_accessible_branches(user)
             .values_list(
@@ -51,14 +51,11 @@ def generate_all_salaries(
         )
 
     # --------------------------------
-    # Generate salaries
+    # Results
     # --------------------------------
-
-    salaries = []
 
     generated = []
     skipped = []
-    failed = []
 
     for employee in employees:
 
@@ -70,12 +67,37 @@ def generate_all_salaries(
                 year,
             )
 
-            salaries.append(salary)
-
             generated.append({
+                "salary_id": salary.id,
                 "employee_id": employee.id,
                 "employee_name": employee.name,
-                "salary_id": salary.id,
+
+                "month": salary.month,
+                "year": salary.year,
+
+                "salary_type": salary.salary_type,
+
+                "working_days": salary.working_days,
+                "present_days": salary.present_days,
+                "absent_days": salary.absent_days,
+
+                "leave_days": salary.leave_days,
+                "half_days": salary.half_days,
+
+                "gross_salary": salary.gross_salary,
+                "attendance_deduction": salary.attendance_deduction,
+                "advance_deduction": salary.advance_deduction,
+                "other_deduction": salary.other_deduction,
+
+                "net_salary": salary.net_salary,
+
+                "status": salary.status,
+
+                "payment_date": salary.payment_date,
+
+                "remarks": salary.remarks,
+
+                "created_at": salary.created_at,
             })
 
         except ValueError as e:
@@ -86,20 +108,18 @@ def generate_all_salaries(
                 "reason": str(e),
             })
 
-        except Exception as e:
-
-            failed.append({
-                "employee_id": employee.id,
-                "employee_name": employee.name,
-                "reason": str(e),
-            })
-
     return {
         "employees_processed": employees.count(),
+
         "generated_count": len(generated),
+
         "skipped_count": len(skipped),
-        "failed_count": len(failed),
+
+        "failed_count": 0,
+
         "generated": generated,
+
         "skipped": skipped,
-        "failed": failed,
+
+        "failed": [],
     }

@@ -6,7 +6,7 @@ from .services import (
     get_payroll_dashboard)
 from employees.models import Employee
 from .models import Salary
-from .serializers import SalarySerializer,SalaryGenerateSerializer ,PayrollDashboardSerializer ,SalaryGenerateAllSerializer
+from .serializers import SalarySerializer,SalaryGenerateSerializer ,PayrollDashboardSerializer ,SalaryGenerateAllResponseSerializer,SalaryGenerateAllSerializer
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
@@ -241,10 +241,14 @@ class SalaryViewSet(viewsets.ReadOnlyModelViewSet):
 
     # all employee Salary-----------------------------
     @extend_schema(
-    request=SalaryGenerateSerializer,
-    responses={200: None},
+    request=SalaryGenerateAllSerializer,
+    responses={200: SalaryGenerateAllResponseSerializer},
     )
-    @action(detail=False, methods=["post"])
+    @action(
+    detail=False,
+    methods=["post"],
+    url_path="generate_all",
+)
     def generate_all(self, request):
 
         serializer = SalaryGenerateAllSerializer(
@@ -264,17 +268,8 @@ class SalaryViewSet(viewsets.ReadOnlyModelViewSet):
             year=year,
         )
 
-        salary_serializer = SalarySerializer(
-            result["salaries"],
-            many=True,
-        )
-
         return Response(
-            {
-                "message": "Salary generated successfully.",
-                "employees_processed": result["employees_processed"],
-                "salaries": salary_serializer.data,
-            },
+            result,
             status=status.HTTP_200_OK,
         )
 

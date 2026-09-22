@@ -13,6 +13,7 @@ class SalarySerializer(serializers.ModelSerializer):
         model = Salary
         fields = "__all__"
 
+
 class SalaryGenerateSerializer(serializers.Serializer):
 
     employee = serializers.IntegerField(
@@ -29,9 +30,9 @@ class SalaryGenerateSerializer(serializers.Serializer):
     )
 
 
-
-
-# salary dashboard  serializer ------------------------------------------------
+# ------------------------------------------------
+# Salary Dashboard Serializer
+# ------------------------------------------------
 
 class PayrollDashboardSerializer(serializers.Serializer):
 
@@ -66,8 +67,12 @@ class PayrollDashboardSerializer(serializers.Serializer):
 
     month = serializers.IntegerField()
 
-    year = serializers.IntegerField()    
+    year = serializers.IntegerField()
 
+
+# ------------------------------------------------
+# Generate All Serializer
+# ------------------------------------------------
 
 class SalaryGenerateAllSerializer(serializers.Serializer):
 
@@ -78,4 +83,91 @@ class SalaryGenerateAllSerializer(serializers.Serializer):
 
     year = serializers.IntegerField(
         min_value=2000
-    )    
+    )
+
+
+# ------------------------------------------------
+# Individual Generated Salary Response
+# ------------------------------------------------
+
+class SalaryGenerateResultSerializer(serializers.Serializer):
+
+    salary_id = serializers.IntegerField()
+
+    employee_id = serializers.IntegerField()
+
+    employee_name = serializers.CharField()
+
+    month = serializers.IntegerField()
+
+    year = serializers.IntegerField()
+
+    salary_type = serializers.CharField()
+
+    working_days = serializers.IntegerField()
+
+    present_days = serializers.IntegerField()
+
+    absent_days = serializers.IntegerField()
+
+    leave_days = serializers.IntegerField()
+
+    half_days = serializers.IntegerField()
+
+    gross_salary = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2
+    )
+
+    attendance_deduction = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2
+    )
+
+    advance_deduction = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2
+    )
+
+    other_deduction = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2
+    )
+
+    net_salary = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2
+    )
+
+    status = serializers.CharField()
+
+    payment_date = serializers.DateField(
+        allow_null=True
+    )
+
+    remarks = serializers.CharField()
+
+    created_at = serializers.DateTimeField()
+
+
+# ------------------------------------------------
+# Generate All Response
+# ------------------------------------------------
+
+class SalaryGenerateAllResponseSerializer(serializers.Serializer):
+
+    employees_processed = serializers.IntegerField()
+
+    generated_count = serializers.IntegerField()
+
+    skipped_count = serializers.IntegerField()
+
+    failed_count = serializers.IntegerField()
+
+    generated = SalaryGenerateResultSerializer(
+        many=True
+    )
+
+    skipped = serializers.ListField()
+
+    failed = serializers.ListField()
