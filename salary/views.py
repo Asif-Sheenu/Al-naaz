@@ -6,7 +6,7 @@ from .services import (
     get_payroll_dashboard)
 from employees.models import Employee
 from .models import Salary
-from .serializers import SalarySerializer,SalaryGenerateSerializer ,PayrollDashboardSerializer 
+from .serializers import SalarySerializer,SalaryGenerateSerializer ,PayrollDashboardSerializer ,SalaryGenerateAllSerializer
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
@@ -247,7 +247,7 @@ class SalaryViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=["post"])
     def generate_all(self, request):
 
-        serializer = SalaryGenerateSerializer(
+        serializer = SalaryGenerateAllSerializer(
             data=request.data
         )
 

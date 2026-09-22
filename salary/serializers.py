@@ -67,3 +67,15 @@ class PayrollDashboardSerializer(serializers.Serializer):
     month = serializers.IntegerField()
 
     year = serializers.IntegerField()    
+
+
+class SalaryGenerateAllSerializer(serializers.Serializer):
+
+    month = serializers.IntegerField(
+        min_value=1,
+        max_value=12
+    )
+
+    year = serializers.IntegerField(
+        min_value=2000
+    )    
