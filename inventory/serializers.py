@@ -2,6 +2,10 @@ from rest_framework import serializers
 from .services.purchase_service import process_purchase
 from .models import Supplier, Product, Purchase,PurchaseItem, StockUsage,StockLedger
 from django.db import transaction
+from expenses.models import FinancialAccount
+from expenses.services.supplier_payment_service import process_supplier_purchase
+from decimal import Decimal
+
 
 class SupplierSerializer(serializers.ModelSerializer):
 
@@ -94,6 +98,22 @@ class PurchaseItemSerializer(serializers.ModelSerializer):
 
         return value 
 
+
+class InitialPaymentSerializer(serializers.Serializer):
+
+    amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        min_value=Decimal("0.01")
+    )
+
+    payment_account = serializers.PrimaryKeyRelatedField(
+        queryset=FinancialAccount.objects.filter(
+            is_active=True
+        )
+    )
+
+
 class PurchaseSerializer(serializers.ModelSerializer):
 
     supplier_name = serializers.CharField(
@@ -105,16 +125,23 @@ class PurchaseSerializer(serializers.ModelSerializer):
         many=True
     )
 
+    initial_payment = InitialPaymentSerializer(
+        required=False
+    )
+
     class Meta:
         model = Purchase
 
         fields = [
             "id",
+            "branch",
             "supplier",
             "supplier_name",
             "purchase_date",
             "invoice_number",
             "remarks",
+            "payment_status",
+            "initial_payment",
             "items",
             "created_at",
         ]
@@ -122,6 +149,7 @@ class PurchaseSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "supplier_name",
+            "payment_status",
             "created_at",
         ]
 
@@ -134,24 +162,64 @@ class PurchaseSerializer(serializers.ModelSerializer):
 
         return value
 
-    @transaction.atomic
-    def create(self, validated_data):
+    def validate(self, attrs):
 
-        items_data = validated_data.pop("items")
+        branch = attrs["branch"]
+        initial_payment = attrs.get("initial_payment")
 
-        purchase = Purchase.objects.create(
-            **validated_data
+        # Calculate purchase total
+        items = attrs.get("items", [])
+
+        purchase_total = sum(
+            item["total_price"]
+            for item in items
         )
 
-        for item_data in items_data:
+        if purchase_total <= 0:
+            raise serializers.ValidationError({
+                "items": "Purchase total must be greater than zero."
+            })
 
+        if initial_payment:
+
+            payment_amount = initial_payment["amount"]
+
+            if payment_amount > purchase_total:
+                raise serializers.ValidationError({
+                    "initial_payment": {
+                        "amount": (
+                            "Initial payment cannot be greater "
+                            "than the purchase total."
+                        )
+                    }
+                })
+
+            payment_account = initial_payment[
+                "payment_account"
+            ]
+
+            if payment_account.branch_id != branch.id:
+                raise serializers.ValidationError({
+                    "initial_payment": {
+                        "payment_account": (
+                            "Financial account does not belong "
+                            "to the selected branch."
+                        )
+                    }
+                })
+
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        items_data = validated_data.pop("items")
+        initial_payment = validated_data.pop("initial_payment", None)
+
+        purchase = Purchase.objects.create(**validated_data)
+
+        for item_data in items_data:
             quantity = item_data["quantity"]
             total_price = item_data["total_price"]
-
-            if quantity <= 0:
-                raise serializers.ValidationError(
-                    "Quantity must be greater than zero."
-                )
 
             unit_price = total_price / quantity
 
@@ -163,11 +231,24 @@ class PurchaseSerializer(serializers.ModelSerializer):
                 unit_price=unit_price,
             )
 
+        # Calculate complete purchase amount
+        purchase_total = sum(
+            item["total_price"]
+            for item in items_data
+        )
+
+        # Add stock
         process_purchase(purchase)
 
+        # Create payable + process initial payment
+        process_supplier_purchase(
+            purchase=purchase,
+            total_amount=purchase_total,
+            initial_payment=initial_payment,
+            created_by=self.context["request"].user,
+        )
+
         return purchase
-
-
 # ---------------------------------
 
 class StockUsageSerializer(serializers.ModelSerializer):
@@ -177,6 +258,7 @@ class StockUsageSerializer(serializers.ModelSerializer):
 
         fields = [
             "id",
+            "branch",
             "product",
             "quantity",
             "usage_date",
@@ -358,3 +440,6 @@ class SupplierPurchaseHistorySerializer(serializers.ModelSerializer):
         ]
 
         read_only_fields = fields
+
+
+        

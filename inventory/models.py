@@ -88,8 +88,18 @@ class Product(models.Model):
 
 # -------------------------------------------------------------------------------
 
-
 class Purchase(models.Model):
+
+    class PaymentStatus(models.TextChoices):
+        CREDIT = "CREDIT", "Credit"
+        PARTIAL = "PARTIAL", "Partially Paid"
+        PAID = "PAID", "Paid"
+
+    branch = models.ForeignKey(
+        "organization.Branch",
+        on_delete=models.PROTECT,
+        related_name="purchases"
+    )
 
     supplier = models.ForeignKey(
         Supplier,
@@ -106,6 +116,12 @@ class Purchase(models.Model):
 
     remarks = models.TextField(
         blank=True
+    )
+
+    payment_status = models.CharField(
+        max_length=10,
+        choices=PaymentStatus.choices,
+        default=PaymentStatus.CREDIT
     )
 
     created_at = models.DateTimeField(
@@ -153,9 +169,15 @@ class PurchaseItem(models.Model):
         return f"{self.product.name} - {self.quantity}"  
 
     # --------------------------------------------------------------------------------- 
-    
+
 
 class StockUsage(models.Model):
+
+    branch = models.ForeignKey(
+        "organization.Branch",
+        on_delete=models.PROTECT,
+        related_name="stock_usages"
+    )
 
     product = models.ForeignKey(
         Product,
@@ -185,13 +207,18 @@ class StockUsage(models.Model):
 
 # ------------------------------------------------------------------------------------------
 # 
-
 class StockLedger(models.Model):
 
     class MovementType(models.TextChoices):
         PURCHASE = "PURCHASE", "Purchase"
         USAGE = "USAGE", "Usage"
         ADJUSTMENT = "ADJUSTMENT", "Adjustment"
+
+    branch = models.ForeignKey(
+        "organization.Branch",
+        on_delete=models.PROTECT,
+        related_name="stock_ledger_entries"
+    )
 
     product = models.ForeignKey(
         Product,
@@ -237,5 +264,4 @@ class StockLedger(models.Model):
             f"{self.product.name} - "
             f"{self.movement_type} - "
             f"{self.quantity}"
-        )        
-
+        )

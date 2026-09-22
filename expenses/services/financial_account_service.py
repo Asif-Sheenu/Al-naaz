@@ -14,6 +14,7 @@ def create_financial_account(
     branch,
     name,
     account_type,
+    account_purpose,
     opening_balance,
     opening_balance_date,
     created_by,
@@ -28,6 +29,7 @@ def create_financial_account(
         branch=branch,
         name=name,
         account_type=account_type,
+        account_purpose=account_purpose,
         opening_balance=opening_balance,
         opening_balance_date=opening_balance_date,
         created_by=created_by,
@@ -51,7 +53,6 @@ def create_financial_account(
         )
 
     return account
-
 
 
 def get_account_balance(account):

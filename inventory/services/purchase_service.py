@@ -9,10 +9,12 @@ def process_purchase(purchase):
 
     for item in purchase.items.select_related("product"):
 
-        # Find the latest stock balance
         last_entry = (
             StockLedger.objects
-            .filter(product=item.product)
+            .filter(
+                branch=purchase.branch,
+                product=item.product,
+            )
             .order_by("-id")
             .first()
         )
@@ -26,6 +28,7 @@ def process_purchase(purchase):
         new_stock = current_stock + item.quantity
 
         StockLedger.objects.create(
+            branch=purchase.branch,
             product=item.product,
             movement_type=StockLedger.MovementType.PURCHASE,
             quantity=item.quantity,
@@ -34,7 +37,6 @@ def process_purchase(purchase):
             movement_date=purchase.purchase_date,
             remarks=f"Purchase #{purchase.id}",
         )
-
 
 
 def get_supplier_purchase_history(supplier_id):
@@ -51,4 +53,4 @@ def get_supplier_purchase_history(supplier_id):
             "-purchase__purchase_date",
             "-id"
         )
-    )        
+    )

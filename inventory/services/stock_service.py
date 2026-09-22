@@ -8,6 +8,7 @@ def get_live_stock(params=None):
     search = params.get("search")
     category = params.get("category")
     status = params.get("status")
+    branch = params.get("branch")
 
     products = Product.objects.filter(
         is_active=True
@@ -29,9 +30,18 @@ def get_live_stock(params=None):
 
     for product in products:
 
-        last_entry = (
+        ledger_queryset = (
             StockLedger.objects
             .filter(product=product)
+        )
+
+        if branch:
+            ledger_queryset = ledger_queryset.filter(
+                branch_id=branch
+            )
+
+        last_entry = (
+            ledger_queryset
             .order_by("-id")
             .first()
         )
@@ -51,7 +61,6 @@ def get_live_stock(params=None):
         else:
             stock_status = "GOOD"
 
-        # Status filter
         if status and status.upper() != stock_status:
             continue
 
@@ -68,9 +77,6 @@ def get_live_stock(params=None):
 
 
 
-# ------------------------------------------------------------------------------------------------------ 
-
-
 def get_stock_ledger(params=None):
 
     params = params or {}
@@ -79,12 +85,24 @@ def get_stock_ledger(params=None):
     movement_type = params.get("movement_type")
     start_date = params.get("start_date")
     end_date = params.get("end_date")
+    branch = params.get("branch")
 
     queryset = (
         StockLedger.objects
-        .select_related("product")
-        .order_by("-movement_date", "-id")
+        .select_related(
+            "branch",
+            "product",
+        )
+        .order_by(
+            "-movement_date",
+            "-id",
+        )
     )
+
+    if branch:
+        queryset = queryset.filter(
+            branch_id=branch
+        )
 
     if product:
         queryset = queryset.filter(

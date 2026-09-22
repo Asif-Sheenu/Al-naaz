@@ -22,14 +22,64 @@ def money(value):
 @transaction.atomic
 def generate_salary(employee, month, year):
     """
-    Generate or update salary for a single employee
+    Generate salary for a single employee
     for the given month and year.
 
-    Salary calculation uses the salary history that was
-    effective for the payroll period.
+    Rules:
+    - Salary can only be generated once for an employee/month/year.
+    - Existing PENDING salary cannot be regenerated.
+    - Existing PAID salary cannot be regenerated.
+    - Required salary configuration must exist.
+    - Monthly salary requires working_days > 0.
+    - Approved advances for the payroll month are deducted.
     """
 
-    # Attendance calculation
+    # --------------------------------------------------
+    # 1. Basic validation
+    # --------------------------------------------------
+
+    if not employee.is_active:
+        raise ValueError(
+            f"Employee '{employee.name}' is inactive."
+        )
+
+    if not month or month < 1 or month > 12:
+        raise ValueError(
+            "Invalid payroll month."
+        )
+
+    if not year or year < 2000:
+        raise ValueError(
+            "Invalid payroll year."
+        )
+
+    # --------------------------------------------------
+    # 2. Prevent regeneration
+    # --------------------------------------------------
+
+    existing_salary = Salary.objects.filter(
+        employee=employee,
+        month=month,
+        year=year,
+    ).first()
+
+    if existing_salary:
+
+        if existing_salary.status == Salary.Status.PAID:
+            raise ValueError(
+                f"Salary for {employee.name} "
+                f"for {month}/{year} has already been paid "
+                "and cannot be regenerated."
+            )
+
+        raise ValueError(
+            f"Salary for {employee.name} "
+            f"for {month}/{year} has already been generated."
+        )
+
+    # --------------------------------------------------
+    # 3. Attendance calculation
+    # --------------------------------------------------
 
     attendance_data = calculate_attendance(
         employee,
@@ -44,7 +94,43 @@ def generate_salary(employee, month, year):
     leave_days = attendance_data["leave_days"]
     unpaid_days = attendance_data["unpaid_days"]
 
-    # Find effective salary
+    # --------------------------------------------------
+    # 4. Validate attendance data
+    # --------------------------------------------------
+
+    if working_days < 0:
+        raise ValueError(
+            "Invalid working days calculated."
+        )
+
+    if present_days < 0:
+        raise ValueError(
+            "Invalid present days calculated."
+        )
+
+    if absent_days < 0:
+        raise ValueError(
+            "Invalid absent days calculated."
+        )
+
+    if half_days < 0:
+        raise ValueError(
+            "Invalid half days calculated."
+        )
+
+    if leave_days < 0:
+        raise ValueError(
+            "Invalid leave days calculated."
+        )
+
+    if unpaid_days < 0:
+        raise ValueError(
+            "Invalid unpaid days calculated."
+        )
+
+    # --------------------------------------------------
+    # 5. Find salary history effective for payroll period
+    # --------------------------------------------------
 
     payroll_date = date(
         year,
@@ -59,22 +145,47 @@ def generate_salary(employee, month, year):
 
     if not salary_history:
         raise ValueError(
-            "No salary history found for this employee "
-            "for the selected payroll period."
+            f"No salary history found for {employee.name} "
+            f"for {month}/{year}."
         )
 
-    # Calculate gross salary
+    # --------------------------------------------------
+    # 6. Calculate gross salary
+    # --------------------------------------------------
 
-    if salary_history.salary_type == Employee.SalaryType.MONTHLY:
+    salary_type = salary_history.salary_type
 
-        monthly_salary = (
+    # -----------------------------------------------
+    # MONTHLY
+    # -----------------------------------------------
+
+    if salary_type == Employee.SalaryType.MONTHLY:
+
+        if not salary_history.monthly_salary:
+            raise ValueError(
+                f"Monthly salary is not configured for "
+                f"{employee.name}."
+            )
+
+        if salary_history.monthly_salary <= Decimal("0.00"):
+            raise ValueError(
+                f"Monthly salary must be greater than zero "
+                f"for {employee.name}."
+            )
+
+        if working_days <= 0:
+            raise ValueError(
+                f"Cannot generate monthly salary for "
+                f"{employee.name}: working days are zero."
+            )
+
+        monthly_salary = money(
             salary_history.monthly_salary
-            or Decimal("0")
         )
 
-        gross_salary = money(monthly_salary)
+        gross_salary = monthly_salary
 
-        # Attendance deduction
+        # Daily rate based on working days
         daily_rate = (
             monthly_salary
             / Decimal(working_days)
@@ -85,11 +196,26 @@ def generate_salary(employee, month, year):
             * Decimal(unpaid_days)
         )
 
-    elif salary_history.salary_type == Employee.SalaryType.DAILY:
+    # -----------------------------------------------
+    # DAILY
+    # -----------------------------------------------
 
-        daily_wage = (
+    elif salary_type == Employee.SalaryType.DAILY:
+
+        if not salary_history.daily_wage:
+            raise ValueError(
+                f"Daily wage is not configured for "
+                f"{employee.name}."
+            )
+
+        if salary_history.daily_wage <= Decimal("0.00"):
+            raise ValueError(
+                f"Daily wage must be greater than zero "
+                f"for {employee.name}."
+            )
+
+        daily_wage = money(
             salary_history.daily_wage
-            or Decimal("0")
         )
 
         # Full day = 100%
@@ -102,27 +228,57 @@ def generate_salary(employee, month, year):
             )
             + (
                 Decimal(half_days)
-                * (daily_wage / Decimal("2"))
+                * (
+                    daily_wage
+                    / Decimal("2")
+                )
             )
         )
 
-        attendance_deduction = Decimal("0.00")
+        attendance_deduction = Decimal(
+            "0.00"
+        )
 
-    elif salary_history.salary_type == Employee.SalaryType.BIWEEKLY:
+    # -----------------------------------------------
+    # BIWEEKLY
+    # -----------------------------------------------
+
+    elif salary_type == Employee.SalaryType.BIWEEKLY:
+
+        if not salary_history.biweekly_salary:
+            raise ValueError(
+                f"Biweekly salary is not configured for "
+                f"{employee.name}."
+            )
+
+        if salary_history.biweekly_salary <= Decimal("0.00"):
+            raise ValueError(
+                f"Biweekly salary must be greater than zero "
+                f"for {employee.name}."
+            )
 
         gross_salary = money(
             salary_history.biweekly_salary
-            or Decimal("0")
         )
 
-        attendance_deduction = Decimal("0.00")
+        attendance_deduction = Decimal(
+            "0.00"
+        )
+
+    # -----------------------------------------------
+    # INVALID SALARY TYPE
+    # -----------------------------------------------
 
     else:
 
-        gross_salary = Decimal("0.00")
-        attendance_deduction = Decimal("0.00")
+        raise ValueError(
+            f"Invalid salary type configured for "
+            f"{employee.name}."
+        )
 
-    # Approved advance deduction
+    # --------------------------------------------------
+    # 7. Approved advance deduction
+    # --------------------------------------------------
 
     advance_total = (
         Advance.objects
@@ -138,13 +294,21 @@ def generate_salary(employee, month, year):
         or Decimal("0.00")
     )
 
-    advance_total = money(advance_total)
+    advance_total = money(
+        advance_total
+    )
 
-    # Other deductions
+    # --------------------------------------------------
+    # 8. Other deductions
+    # --------------------------------------------------
 
-    other_deduction = Decimal("0.00")
+    other_deduction = Decimal(
+        "0.00"
+    )
 
-    # Calculate net salary
+    # --------------------------------------------------
+    # 9. Calculate net salary
+    # --------------------------------------------------
 
     net_salary = (
         gross_salary
@@ -153,73 +317,35 @@ def generate_salary(employee, month, year):
         - other_deduction
     )
 
+    # Salary cannot be negative
     if net_salary < Decimal("0.00"):
         net_salary = Decimal("0.00")
 
-    net_salary = money(net_salary)
+    net_salary = money(
+        net_salary
+    )
 
-    # Create / update payroll
+    # --------------------------------------------------
+    # 10. Create salary record
+    # --------------------------------------------------
 
-    # Create / update payroll
-
-    existing_salary = Salary.objects.filter(
+    salary = Salary.objects.create(
         employee=employee,
         month=month,
         year=year,
-    ).first()
+        salary_type=salary_type,
 
-    if existing_salary:
+        working_days=working_days,
+        present_days=present_days,
+        absent_days=absent_days,
+        half_days=half_days,
+        leave_days=leave_days,
 
-        # --------------------------------
-        # Protect paid payroll
-        # --------------------------------
+        gross_salary=gross_salary,
+        attendance_deduction=attendance_deduction,
+        advance_deduction=advance_total,
+        other_deduction=other_deduction,
+        net_salary=net_salary,
+    )
 
-        if existing_salary.status == Salary.Status.PAID:
-            raise ValueError(
-                "Salary has already been paid and cannot be regenerated."
-            )
-
-        # --------------------------------
-        # Update pending payroll
-        # --------------------------------
-
-        salary = existing_salary
-
-        salary.salary_type = salary_history.salary_type
-        salary.working_days = working_days
-        salary.present_days = present_days
-        salary.half_days = half_days
-        salary.absent_days = absent_days
-        salary.leave_days = leave_days
-        salary.gross_salary = gross_salary
-        salary.attendance_deduction = attendance_deduction
-        salary.advance_deduction = advance_total
-        salary.other_deduction = other_deduction
-        salary.net_salary = net_salary
-
-        salary.save()
-
-    else:
-
-        # --------------------------------
-        # Create new payroll
-        # --------------------------------
-
-        salary = Salary.objects.create(
-            employee=employee,
-            month=month,
-            year=year,
-            salary_type=salary_history.salary_type,
-            working_days=working_days,
-            present_days=present_days,
-            half_days=half_days,
-            absent_days=absent_days,
-            leave_days=leave_days,
-            gross_salary=gross_salary,
-            attendance_deduction=attendance_deduction,
-            advance_deduction=advance_total,
-            other_deduction=other_deduction,
-            net_salary=net_salary,
-        )
-
-    return salary                                       
+    return salary

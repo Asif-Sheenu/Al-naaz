@@ -4,14 +4,21 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     ExpenseCategoryViewSet,
     ExpenseViewSet,
-    PettyCashLedgerView,
-    AddPettyCashView,
-    PettyCashBalanceView,
     ExpenseReportView,
     MonthlyExpenseReportView,
     DailyExpenseReportView,
     YearlyExpenseReportView,
-    FinancialAccountViewSet
+    FinancialAccountViewSet,
+    TransferViewSet,
+    FinancialTransactionViewSet,
+    DailySalesViewSet,
+    ReceivableSettlementViewSet,
+    ReceivableViewSet,
+    DeliveryPartnerViewSet,
+DeliveryPartnerCommissionRateViewSet,
+ExpenseAdjustmentViewSet,
+SupplierPaymentViewSet,
+SupplierPayableViewSet
 )
 
 
@@ -35,26 +42,71 @@ router.register(
     basename="financial-account",
 )
 
+router.register(
+    "transfers",
+    TransferViewSet,
+    basename="transfer",
+)
+
+
+router.register(
+    "transactions",
+    FinancialTransactionViewSet,
+    basename="financial-transaction",
+)
+
+
+router.register(
+    "daily-sales",
+    DailySalesViewSet,
+    basename="daily-sales",
+)
+
+router.register(
+    "receivable-settlements",
+    ReceivableSettlementViewSet,
+    basename="receivable-settlement",
+)
+
+router.register(
+    "receivables",
+    ReceivableViewSet,
+    basename="receivable",
+)
+
+
+router.register(
+    "delivery-partners",
+    DeliveryPartnerViewSet,
+    basename="delivery-partner",
+)
+
+router.register(
+    "delivery-partner-rates",
+    DeliveryPartnerCommissionRateViewSet,
+    basename="delivery-partner-rate",
+)
+
+router.register(
+    r"expense-adjustments",
+    ExpenseAdjustmentViewSet,
+)
+
+router.register(
+    r"supplier-payments",
+    SupplierPaymentViewSet,
+    basename="supplier-payment",
+)
+
+router.register(
+    r"supplier-payables",
+    SupplierPayableViewSet,
+    basename="supplier-payable"
+)
+
 urlpatterns = [
     path("", include(router.urls)),
 
-    path(
-        "petty-cash/",
-        PettyCashLedgerView.as_view(),
-        name="petty-cash"
-    ),
-
-    path(
-        "petty-cash/add/",
-        AddPettyCashView.as_view(),
-        name="add-petty-cash"
-    ),
-
-    path(
-        "petty-cash/balance/",
-        PettyCashBalanceView.as_view(),
-        name="petty-cash-balance"
-    ),
 
     path(
     "reports/",

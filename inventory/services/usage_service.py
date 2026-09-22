@@ -9,7 +9,10 @@ def process_usage(usage):
 
     last_entry = (
         StockLedger.objects
-        .filter(product=usage.product)
+        .filter(
+            branch=usage.branch,
+            product=usage.product,
+        )
         .order_by("-id")
         .first()
     )
@@ -29,6 +32,7 @@ def process_usage(usage):
     new_stock = current_stock - usage.quantity
 
     StockLedger.objects.create(
+        branch=usage.branch,
         product=usage.product,
         movement_type=StockLedger.MovementType.USAGE,
         quantity=-usage.quantity,
