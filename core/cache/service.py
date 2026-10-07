@@ -24,4 +24,5 @@ def exists(key: str) -> bool:
 
 
 def delete_pattern(pattern: str) -> None:
-    cache.delete_pattern(pattern)
+    if hasattr(cache, "delete_pattern"):
+        cache.delete_pattern(pattern)
