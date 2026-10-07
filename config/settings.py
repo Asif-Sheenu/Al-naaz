@@ -184,6 +184,8 @@ SIMPLE_JWT = {
 'BLACKLIST_AFTER_ROTATION': True,
 
 }
+from corsheaders.defaults import default_headers
+
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
@@ -192,6 +194,11 @@ CORS_ALLOWED_ORIGINS = [
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_HEADERS = [
+    *default_headers,
+    "idempotency-key",
+]
 
 STATICFILES_STORAGE = (
     "whitenoise.storage.CompressedManifestStaticFilesStorage"
@@ -222,5 +229,22 @@ SPECTACULAR_SETTINGS = {
                 "bearerFormat": "JWT",
             }
         }
+    },
+}
+
+REDIS_URL = config(
+    "REDIS_URL",
+    default="redis://[::1]:6379/1"
+)
+
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": REDIS_URL,
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        },
+        "KEY_PREFIX": "al_naaz",
+        "TIMEOUT": 300,
     },
 }

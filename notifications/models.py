@@ -62,3 +62,61 @@ class ActivityLog(models.Model):
             f"{self.module} - "
             f"{self.action}"
         )
+
+
+class Notification(models.Model):
+
+    class NotificationType(models.TextChoices):
+        INFO = "INFO", "Information"
+        WARNING = "WARNING", "Warning"
+        APPROVAL = "APPROVAL", "Approval Required"
+        ALERT = "ALERT", "Alert"
+
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+    )
+
+    notification_type = models.CharField(
+        max_length=20,
+        choices=NotificationType.choices,
+    )
+
+    title = models.CharField(
+        max_length=255,
+    )
+
+    message = models.TextField()
+
+    module = models.CharField(
+        max_length=50,
+    )
+
+    object_id = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+    )
+
+    is_read = models.BooleanField(
+        default=False,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+        indexes = [
+            models.Index(
+                fields=["recipient", "is_read"],
+            ),
+            models.Index(
+                fields=["recipient", "created_at"],
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.recipient.username} - {self.title}"    
