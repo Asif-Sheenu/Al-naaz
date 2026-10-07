@@ -1,4 +1,11 @@
-from ..models import Product, StockLedger
+from ..models import Product, StockBalance, StockLedger
+
+from core.cache.keys import inventory_stock
+from core.cache.service import get as cache_get
+from core.cache.service import set as cache_set
+from core.cache.constants import (
+    INVENTORY_STOCK_CACHE_TIMEOUT,
+)
 
 
 def get_live_stock(params=None):
@@ -10,8 +17,30 @@ def get_live_stock(params=None):
     status = params.get("status")
     branch = params.get("branch")
 
-    products = Product.objects.filter(
-        is_active=True
+    # ------------------------------------------------------------
+    # CACHE
+    # ------------------------------------------------------------
+
+    cache_key = inventory_stock(
+        branch_id=branch,
+        search=search,
+        category=category,
+        status=status,
+    )
+
+    cached_data = cache_get(cache_key)
+
+    if cached_data is not None:
+        return cached_data
+
+    # ------------------------------------------------------------
+    # PRODUCTS
+    # ------------------------------------------------------------
+
+    products = (
+        Product.objects
+        .filter(is_active=True)
+        .order_by("name")
     )
 
     # Search by product name
@@ -26,30 +55,55 @@ def get_live_stock(params=None):
             category__iexact=category
         )
 
+    # ------------------------------------------------------------
+    # STOCK BALANCES
+    # ------------------------------------------------------------
+
+    # If a branch is supplied, only return stock
+    # for that branch.
+    #
+    # If no branch is supplied, calculate total
+    # stock across branches.
+
+    stock_balances = (
+        StockBalance.objects
+        .select_related(
+            "product",
+            "branch",
+        )
+    )
+
+    if branch:
+        stock_balances = stock_balances.filter(
+            branch_id=branch
+        )
+
+    # ------------------------------------------------------------
+    # BUILD STOCK LOOKUP
+    # ------------------------------------------------------------
+
+    stock_lookup = {}
+
+    for balance in stock_balances:
+
+        product_id = balance.product_id
+
+        stock_lookup[product_id] = (
+            stock_lookup.get(product_id, 0)
+            + balance.quantity
+        )
+
+    # ------------------------------------------------------------
+    # BUILD RESPONSE
+    # ------------------------------------------------------------
+
     stock_data = []
 
     for product in products:
 
-        ledger_queryset = (
-            StockLedger.objects
-            .filter(product=product)
-        )
-
-        if branch:
-            ledger_queryset = ledger_queryset.filter(
-                branch_id=branch
-            )
-
-        last_entry = (
-            ledger_queryset
-            .order_by("-id")
-            .first()
-        )
-
-        current_stock = (
-            last_entry.balance_after
-            if last_entry
-            else 0
+        current_stock = stock_lookup.get(
+            product.id,
+            0
         )
 
         if current_stock <= 0:
@@ -61,7 +115,10 @@ def get_live_stock(params=None):
         else:
             stock_status = "GOOD"
 
-        if status and status.upper() != stock_status:
+        if (
+            status
+            and status.upper() != stock_status
+        ):
             continue
 
         stock_data.append({
@@ -73,8 +130,17 @@ def get_live_stock(params=None):
             "status": stock_status,
         })
 
-    return stock_data
+    # ------------------------------------------------------------
+    # STORE IN CACHE
+    # ------------------------------------------------------------
 
+    cache_set(
+        cache_key,
+        stock_data,
+        INVENTORY_STOCK_CACHE_TIMEOUT,
+    )
+
+    return stock_data
 
 
 def get_stock_ledger(params=None):

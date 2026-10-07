@@ -1,7 +1,15 @@
 from rest_framework.routers import DefaultRouter,path
 
-from .views import SupplierViewSet, ProductViewSet , PurchaseViewSet,StockUsageViewSet,LiveStockView,StockLedgerView,SupplierPurchaseHistoryView
-
+from .views import (
+    SupplierViewSet,
+    ProductViewSet,
+    PurchaseViewSet,
+    StockUsageViewSet,
+    StockAdjustmentViewSet,
+    LiveStockView,
+    StockLedgerView,
+    SupplierPurchaseHistoryView,
+)
 
 router = DefaultRouter()
 
@@ -28,6 +36,12 @@ router.register(
     "usages",
     StockUsageViewSet,
     basename="usage"
+)
+
+router.register(
+    "stock-adjustments",
+    StockAdjustmentViewSet,
+    basename="stock-adjustment"
 )
 
 
