@@ -239,12 +239,8 @@ REDIS_URL = config(
 
 CACHES = {
     "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": REDIS_URL,
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        },
-        "KEY_PREFIX": "al_naaz",
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "al-naaz-cache",
         "TIMEOUT": 300,
     },
 }
