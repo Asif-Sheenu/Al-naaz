@@ -1,17 +1,22 @@
-from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from .views import ActivityLogViewSet
-
+from .views import (
+    ActivityLogViewSet,
+    NotificationViewSet,
+)
 
 router = DefaultRouter()
 
 router.register(
     "activity-logs",
     ActivityLogViewSet,
-    basename="activity-log"
+    basename="activity-log",
 )
 
-urlpatterns = [
-    path("", include(router.urls)),
-]
+router.register(
+    "notifications",
+    NotificationViewSet,
+    basename="notification",
+)
+
+urlpatterns = router.urls

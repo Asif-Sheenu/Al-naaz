@@ -132,6 +132,40 @@ class Supplier(models.Model):
         return self.name
 
 
+
+# =============================================================================
+# PRODUCT CATEGORY
+# =============================================================================
+
+class ProductCategory(models.Model):
+    name = models.CharField(
+        max_length=100,
+        unique=True,
+    )
+
+    description = models.TextField(
+        blank=True,
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+    
+
 # =============================================================================
 # PRODUCT
 # =============================================================================
@@ -155,6 +189,16 @@ class Product(models.Model):
         max_length=100,
         blank=True
     )
+
+    
+    product_category = models.ForeignKey(
+        ProductCategory,
+        on_delete=models.PROTECT,
+        related_name="products",
+        null=True,
+        blank=True,
+    )
+
 
     unit = models.CharField(
         max_length=20,
@@ -594,3 +638,5 @@ class StockLedger(models.Model):
             f"{self.movement_type} - "
             f"{self.quantity}"
         )
+
+

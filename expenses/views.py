@@ -48,7 +48,7 @@ from .services.transfer_service import transfer_money
 from .services.financial_account_service import (
     create_financial_account,
 )
-from drf_spectacular.utils import extend_schema, OpenApiParameter,OpenApiResponse
+from drf_spectacular.utils import extend_schema, OpenApiParameter,OpenApiResponse,OpenApiTypes
 from calendar import monthrange
 from .pagination import StandardPagination
 from .serializers import (
@@ -83,7 +83,14 @@ from expenses.services.financial_account_service import (
 from .services.supplier_payment_service import (
     create_supplier_payment,
 )
+from django.db import transaction
 
+
+from inventory.services.idempotency_service import (
+    start_idempotent_operation,
+    complete_idempotent_operation,
+    IdempotencyConflict,
+)
 
 
 class FinancialAccountViewSet(viewsets.ModelViewSet):
@@ -1397,14 +1404,86 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
             payable__branch_id__in=accessible_branch_ids
         )
 
-    def perform_create(self, serializer):
+    
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="Idempotency-Key",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.HEADER,
+                required=True,
+                description=(
+                    "Unique key used to safely retry "
+                    "supplier payment creation."
+                ),
+            )
+        ]
+    )
+    def create(self, request, *args, **kwargs):
+        operation = "expenses.supplier_payment.create"
 
+        with transaction.atomic():
+            record, created = start_idempotent_operation(
+                request=request,
+                operation=operation,
+            )
+
+            # A completed request: return the original payment.
+            if not created:
+                payment = (
+                    self.get_queryset()
+                    .filter(pk=record.resource_id)
+                    .first()
+                )
+
+                if payment is None:
+                    raise IdempotencyConflict(
+                        "The original supplier payment no longer exists "
+                        "or is not accessible."
+                    )
+
+                serializer = self.get_serializer(payment)
+
+                return Response(
+                    serializer.data,
+                    status=(
+                        record.response_status_code
+                        or status.HTTP_201_CREATED
+                    ),
+                )
+
+            # First request: create the payment and financial transaction.
+            response = super().create(
+                request,
+                *args,
+                **kwargs,
+            )
+
+            payment = getattr(
+                self,
+                "_created_supplier_payment",
+                None,
+            )
+
+            if payment is None:
+                raise IdempotencyConflict(
+                    "Supplier payment creation did not return a resource."
+                )
+
+            complete_idempotent_operation(
+                record=record,
+                resource_type="SupplierPayment",
+                resource_id=payment.id,
+                response_status_code=response.status_code,
+            )
+
+            return response
+
+    def perform_create(self, serializer):
         validated_data = serializer.validated_data
 
-        payable = validated_data["payable"]
-
         payment = create_supplier_payment(
-            payable=payable,
+            payable=validated_data["payable"],
             amount=validated_data["amount"],
             payment_account=validated_data["payment_account"],
             payment_date=validated_data["payment_date"],
@@ -1413,7 +1492,9 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
             remarks=validated_data.get("remarks", ""),
         )
 
-        serializer.instance = payment    
+        serializer.instance = payment
+        self._created_supplier_payment = payment
+    
 
 
 class SupplierPayableViewSet(

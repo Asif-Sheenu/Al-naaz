@@ -6,6 +6,7 @@ from inventory.models import Purchase
 
 from expenses.models import (
     FinancialTransaction,
+    FinancialAccount,
     SupplierPayable,
     SupplierPayment,
 )
@@ -55,11 +56,32 @@ def create_supplier_payment(
             "Supplier payment must be greater than zero."
         )
 
+    # Reload and lock the payable row to prevent
+    # concurrent payments from overpaying it.
+    payable = (
+        SupplierPayable.objects
+        .select_for_update()
+        .select_related(
+            "supplier",
+            "purchase",
+            "branch",
+        )
+        .get(pk=payable.pk)
+    )
+
     if amount > payable.outstanding_amount:
         raise ValueError(
             "Payment cannot be greater than the "
             "outstanding payable."
         )
+
+    # Reload the account and lock its row while
+    # validating and recording the payment.
+    payment_account = (
+        FinancialAccount.objects
+        .select_for_update()
+        .get(pk=payment_account.pk)
+    )
 
     if payment_account.branch_id != payable.branch_id:
         raise ValueError(
@@ -70,6 +92,16 @@ def create_supplier_payment(
     if not payment_account.is_active:
         raise ValueError(
             "Cannot make payment using an inactive account."
+        )
+
+    if payment_account.account_type not in [
+        FinancialAccount.AccountType.CASH,
+        FinancialAccount.AccountType.BANK,
+        FinancialAccount.AccountType.UPI,
+        FinancialAccount.AccountType.PETTY_CASH,
+    ]:
+        raise ValueError(
+            "This account cannot be used to pay a supplier."
         )
 
     payment = SupplierPayment.objects.create(
@@ -88,15 +120,12 @@ def create_supplier_payment(
         transaction_type=(
             FinancialTransaction.TransactionType.SUPPLIER_PAYMENT
         ),
-        direction=(
-            FinancialTransaction.Direction.OUT
-        ),
+        direction=FinancialTransaction.Direction.OUT,
         amount=amount,
         transaction_date=payment_date,
         created_by=created_by,
         description=(
-            f"Supplier payment - "
-            f"{payable.supplier.name}"
+            f"Supplier payment - {payable.supplier.name}"
         ),
         reference=(
             reference
@@ -120,6 +149,23 @@ def create_supplier_payment(
             "updated_at",
         ]
     )
+
+    # Keep the purchase payment status synchronized
+    # after both initial and subsequent payments.
+    purchase = (
+        Purchase.objects
+        .select_for_update()
+        .get(pk=payable.purchase_id)
+    )
+
+    if payable.outstanding_amount == Decimal("0.00"):
+        purchase.payment_status = Purchase.PaymentStatus.PAID
+    elif payable.paid_amount > Decimal("0.00"):
+        purchase.payment_status = Purchase.PaymentStatus.PARTIAL
+    else:
+        purchase.payment_status = Purchase.PaymentStatus.CREDIT
+
+    purchase.save(update_fields=["payment_status"])
 
     return payment
 
@@ -158,23 +204,8 @@ def process_supplier_purchase(
                 ),
             )
 
-    if payable.outstanding_amount == Decimal("0.00"):
-        purchase.payment_status = (
-            Purchase.PaymentStatus.PAID
-        )
-
-    elif payable.paid_amount > Decimal("0.00"):
-        purchase.payment_status = (
-            Purchase.PaymentStatus.PARTIAL
-        )
-
-    else:
-        purchase.payment_status = (
-            Purchase.PaymentStatus.CREDIT
-        )
-
-    purchase.save(
-        update_fields=["payment_status"]
-    )
+    # Return the latest payable values, including
+    # any initial payment made above.
+    payable.refresh_from_db()
 
     return payable

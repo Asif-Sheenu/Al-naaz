@@ -9,6 +9,7 @@ from .views import (
     LiveStockView,
     StockLedgerView,
     SupplierPurchaseHistoryView,
+    ProductCategoryViewSet
 )
 
 router = DefaultRouter()
@@ -43,7 +44,11 @@ router.register(
     StockAdjustmentViewSet,
     basename="stock-adjustment"
 )
-
+router.register(
+    "product-categories",
+    ProductCategoryViewSet,
+    basename="product-category",
+)
 
 urlpatterns = router.urls + [
     path(

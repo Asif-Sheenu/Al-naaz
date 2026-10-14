@@ -3,7 +3,8 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
 from rest_framework import viewsets, mixins,status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-
+from .models import ProductCategory
+from .serializers import ProductCategorySerializer
 from .models import (
     Supplier,
     Product,
@@ -70,6 +71,26 @@ class SupplierViewSet(viewsets.ModelViewSet):
     permission_classes = [
         CanViewInventory
     ]
+
+
+
+
+class ProductCategoryViewSet(viewsets.ModelViewSet):
+    serializer_class = ProductCategorySerializer
+    permission_classes = [CanViewInventory]
+
+    def get_queryset(self):
+        queryset = ProductCategory.objects.all()
+
+        is_active = self.request.query_params.get("is_active")
+        if is_active is not None:
+            if is_active.lower() in ("true", "1"):
+                queryset = queryset.filter(is_active=True)
+            elif is_active.lower() in ("false", "0"):
+                queryset = queryset.filter(is_active=False)
+
+        return queryset
+
 
 
 # ============================================================

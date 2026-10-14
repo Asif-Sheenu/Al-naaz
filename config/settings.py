@@ -46,6 +46,7 @@ INSTALLED_APPS = [
 'corsheaders',
 'inventory',
 'notifications',
+"dashboard",
 'users',
 'employees',
 'attendance',

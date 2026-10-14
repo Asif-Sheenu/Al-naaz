@@ -1138,20 +1138,18 @@ class ExpenseAdjustmentRejectSerializer(serializers.Serializer):
 
 
 class SupplierPaymentSerializer(serializers.ModelSerializer):
-
     supplier_name = serializers.CharField(
         source="payable.supplier.name",
-        read_only=True
+        read_only=True,
     )
 
     payable_status = serializers.CharField(
         source="payable.status",
-        read_only=True
+        read_only=True,
     )
 
     class Meta:
         model = SupplierPayment
-
         fields = [
             "id",
             "payable",
@@ -1165,70 +1163,92 @@ class SupplierPaymentSerializer(serializers.ModelSerializer):
             "payable_status",
             "created_at",
         ]
-
         read_only_fields = [
             "id",
             "supplier_name",
             "created_by",
             "payable_status",
             "created_at",
-        ]    
-
-
-class SupplierPaymentSerializer(serializers.ModelSerializer):
-
-    supplier_name = serializers.CharField(
-        source="payable.supplier.name",
-        read_only=True,
-    )
-
-    payable_status = serializers.CharField(
-        source="payable.status",
-        read_only=True,
-    )
-
-    class Meta:
-        model = SupplierPayment
-
-        fields = [
-            "id",
-            "payable",
-            "supplier_name",
-            "payment_account",
-            "amount",
-            "payment_date",
-            "reference",
-            "remarks",
-            "created_by",
-            "payable_status",
-            "created_at",
         ]
 
-        read_only_fields = [
-            "id",
-            "supplier_name",
-            "payable_status",
-            "created_by",
-            "created_at",
-        ]
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        request = self.context.get("request")
+        if request is None or not request.user.is_authenticated:
+            self.fields["payable"].queryset = SupplierPayable.objects.none()
+            self.fields["payment_account"].queryset = (
+                FinancialAccount.objects.none()
+            )
+            return
+
+        user = request.user
+
+        if user.is_superuser or user.role == "ADMIN":
+            return
+
+        accessible_branches = get_accessible_branches(user)
+
+        self.fields["payable"].queryset = (
+            SupplierPayable.objects
+            .filter(branch__in=accessible_branches)
+            .select_related("supplier", "branch")
+        )
+
+        self.fields["payment_account"].queryset = (
+            FinancialAccount.objects
+            .filter(branch__in=accessible_branches)
+        )
 
     def validate_amount(self, value):
-
         if value <= Decimal("0.00"):
             raise serializers.ValidationError(
                 "Payment amount must be greater than zero."
             )
-
         return value
 
     def validate_payment_account(self, account):
-
         if not account.is_active:
             raise serializers.ValidationError(
                 "Cannot make payment using an inactive account."
             )
 
+        allowed_types = {
+            FinancialAccount.AccountType.CASH,
+            FinancialAccount.AccountType.BANK,
+            FinancialAccount.AccountType.UPI,
+            FinancialAccount.AccountType.PETTY_CASH,
+        }
+
+        if account.account_type not in allowed_types:
+            raise serializers.ValidationError(
+                "This account cannot be used for supplier payments."
+            )
+
         return account
+
+    def validate(self, attrs):
+        payable = attrs["payable"]
+        account = attrs["payment_account"]
+        amount = attrs["amount"]
+
+        if payable.branch_id != account.branch_id:
+            raise serializers.ValidationError({
+                "payment_account": (
+                    "Payment account must belong to the same branch "
+                    "as the supplier payable."
+                )
+            })
+
+        
+        if amount > payable.outstanding_amount:
+            raise serializers.ValidationError({
+                "amount": (
+                    "Payment cannot exceed the outstanding payable."
+                )
+            })
+
+        return attrs
 
 
 class SupplierPaymentHistorySerializer(

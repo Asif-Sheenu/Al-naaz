@@ -10,6 +10,7 @@ from expenses.services.supplier_payment_service import (
 
 from .models import (
     Supplier,
+    ProductCategory,
     Product,
     Purchase,
     PurchaseItem,
@@ -49,40 +50,167 @@ class SupplierSerializer(serializers.ModelSerializer):
         ]
 
 
-# ============================================================
-# PRODUCT
-# ============================================================
 
-class ProductSerializer(serializers.ModelSerializer):
-
+class ProductCategorySerializer(serializers.ModelSerializer):
     class Meta:
-        model = Product
-
+        model = ProductCategory
         fields = [
             "id",
             "name",
-            "category",
-            "unit",
-            "minimum_stock",
+            "description",
             "is_active",
             "created_at",
             "updated_at",
         ]
-
         read_only_fields = [
             "id",
             "created_at",
             "updated_at",
         ]
 
-    def validate_minimum_stock(self, value):
+    def validate_name(self, value):
+        value = value.strip()
 
+        if not value:
+            raise serializers.ValidationError(
+                "Category name cannot be empty."
+            )
+
+        return value
+
+
+# ============================================================
+# PRODUCT
+# ============================================================
+
+
+
+class ProductSerializer(serializers.ModelSerializer):
+    product_category_name = serializers.CharField(
+        source="product_category.name",
+        read_only=True,
+        allow_null=True,
+    )
+
+    class Meta:
+        model = Product
+        fields = [
+            "id",
+            "name",
+            "category",  # Legacy compatibility
+            "product_category",
+            "product_category_name",
+            "unit",
+            "minimum_stock",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "created_at",
+            "updated_at",
+            "product_category_name",
+        ]
+
+    def validate_minimum_stock(self, value):
         if value < 0:
             raise serializers.ValidationError(
                 "Minimum stock cannot be negative."
             )
-
         return value
+
+    def validate(self, attrs):
+        category_provided = "category" in attrs
+        relation_provided = "product_category" in attrs
+
+        if relation_provided:
+            category = attrs["product_category"]
+
+            if category is None:
+                if attrs.get("category", "").strip():
+                    raise serializers.ValidationError({
+                        "category": (
+                            "Cannot provide a category name when "
+                            "product_category is null."
+                        )
+                    })
+                attrs["category"] = ""
+            else:
+                if not category.is_active:
+                    raise serializers.ValidationError({
+                        "product_category": (
+                            "Cannot assign an inactive category."
+                        )
+                    })
+                attrs["category"] = category.name
+
+        elif category_provided:
+            name = attrs["category"].strip()
+            attrs["category"] = name
+
+            if not name:
+                attrs["product_category"] = None
+            else:
+                category = ProductCategory.objects.filter(
+                    name__iexact=name
+                ).first()
+
+                if category:
+                    if not category.is_active:
+                        raise serializers.ValidationError({
+                            "category": (
+                                "This category is inactive."
+                            )
+                        })
+
+                    attrs["product_category"] = category
+                    attrs["category"] = category.name
+
+        return attrs
+
+    def _synchronize_category(self, validated_data):
+        if (
+            "category" in validated_data
+            and "product_category" not in validated_data
+        ):
+            name = validated_data["category"].strip()
+
+            if name:
+                category, _ = ProductCategory.objects.get_or_create(
+                    name=name,
+                    defaults={"is_active": True},
+                )
+
+                if not category.is_active:
+                    raise serializers.ValidationError({
+                        "category": "This category is inactive."
+                    })
+
+                validated_data["product_category"] = category
+                validated_data["category"] = category.name
+            else:
+                validated_data["product_category"] = None
+
+        if "product_category" in validated_data:
+            category = validated_data["product_category"]
+            validated_data["category"] = (
+                category.name if category else ""
+            )
+
+        return validated_data
+
+    def create(self, validated_data):
+        validated_data = self._synchronize_category(
+            validated_data
+        )
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data = self._synchronize_category(
+            validated_data
+        )
+        return super().update(instance, validated_data)
 
 
 # ============================================================

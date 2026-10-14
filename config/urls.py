@@ -33,6 +33,7 @@ urlpatterns = [
     path("api/", include("expenses.urls")),
     path("api/", include("notifications.urls")),
     path("api/", include("organization.urls")),
+    path("api/dashboard/", include("dashboard.urls")),
 
 
 

@@ -4,6 +4,11 @@ from users.permissions import (
     IsAdminOrManager,
     IsAdminOrStaff,
 )
+from notifications.models import Notification
+from notifications.services.notification_service import (
+    notify_admins_and_managers,
+    notify_user,
+)
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -110,10 +115,12 @@ class AdvanceViewSet(viewsets.ModelViewSet):
 
         return queryset                                         
 
+    
     # --------------------------------------------------
     # CREATE ADVANCE
     # --------------------------------------------------
 
+    @transaction.atomic
     def perform_create(self, serializer):
 
         advance = serializer.save(
@@ -137,6 +144,19 @@ class AdvanceViewSet(viewsets.ModelViewSet):
                 "remarks": advance.remarks,
                 "status": advance.status,
             },
+        )
+
+        notify_admins_and_managers(
+            notification_type=Notification.NotificationType.APPROVAL,
+            title="New Advance Request",
+            message=(
+                f"{self.request.user.username} requested "
+                f"an advance of ₹{advance.amount} "
+                f"for {advance.employee.name}."
+            ),
+            module="ADVANCE",
+            object_id=advance.id,
+            branch=advance.employee.branch,
         )
 
     # --------------------------------------------------
@@ -205,6 +225,7 @@ class AdvanceViewSet(viewsets.ModelViewSet):
                 f"Approved employee advance "
                 f"of ₹{advance.amount}"
             ),
+         
             new_data={
                 "employee": advance.employee.name,
                 "amount": str(advance.amount),
@@ -216,7 +237,18 @@ class AdvanceViewSet(viewsets.ModelViewSet):
                 ),
             },
         )
-
+        notify_user(
+            user=advance.requested_by,
+            notification_type=Notification.NotificationType.INFO,
+            title="Advance Approved",
+            message=(
+                f"Your advance request of ₹{advance.amount} "
+                f"for {advance.employee.name} has been approved "
+                f"by {request.user.username}."
+            ),
+            module="ADVANCE",
+            object_id=advance.id,
+        )
         return Response(
             {
                 "message": (
@@ -307,7 +339,18 @@ class AdvanceViewSet(viewsets.ModelViewSet):
                 ),
             },
         )
-
+        notify_user(
+            user=advance.requested_by,
+            notification_type=Notification.NotificationType.WARNING,
+            title="Advance Rejected",
+            message=(
+                f"Your advance request of ₹{advance.amount} "
+                f"for {advance.employee.name} has been rejected "
+                f"by {request.user.username}."
+            ),
+            module="ADVANCE",
+            object_id=advance.id,
+        )
         return Response(
             {
                 "message": (
