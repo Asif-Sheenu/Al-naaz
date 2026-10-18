@@ -3,12 +3,18 @@ from rest_framework import viewsets
 from organization.services.access_service import (
     get_accessible_branches,
 )
+import logging
+
+from notifications.services.notification_service import (
+    notify_admins_and_managers,
+)
 from datetime import date as python_date
 from drf_spectacular.utils import (
     extend_schema,
     OpenApiParameter,
     OpenApiTypes,
 )
+from organization.models import Branch
 from .services.attendance_service import (
     save_bulk_attendance,
     )
@@ -23,7 +29,7 @@ from .services.attendance_service import (
     save_bulk_attendance,
 )
 
-
+logger = logging.getLogger(__name__)
 class AttendanceViewSet(viewsets.ModelViewSet):
 
     serializer_class = AttendanceSerializer
@@ -395,8 +401,49 @@ class AttendanceViewSet(viewsets.ModelViewSet):
                     "detail": str(exc)
                 },
                 status=status.HTTP_400_BAD_REQUEST,
-            )
+            )        
+        # -----------------------------------------
+        # Notify relevant admins and managers
+        # -----------------------------------------
 
+        created_count = result["created_count"]
+        updated_count = result["updated_count"]
+
+        if created_count or updated_count:
+            if created_count and updated_count:
+                title = "Attendance Saved"
+                message = (
+                    f"Attendance for {attendance_date} was saved: "
+                    f"{created_count} new records and "
+                    f"{updated_count} updated records."
+                )
+            elif created_count:
+                title = "Attendance Recorded"
+                message = (
+                    f"{created_count} attendance records were "
+                    f"recorded for {attendance_date}."
+                )
+            else:
+                title = "Attendance Updated"
+                message = (
+                    f"{updated_count} attendance records were "
+                    f"updated for {attendance_date}."
+                )
+
+            try:
+                notify_admins_and_managers(
+                    notification_type="INFO",
+                    title=title,
+                    message=message,
+                    module="ATTENDANCE",
+                    object_id=None,
+                    branch=Branch.objects.get(pk=branch_id),
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to create attendance notification for branch %s",
+                    branch_id,
+                )
         # -----------------------------------------
         # Serialize results
         # -----------------------------------------

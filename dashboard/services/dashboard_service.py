@@ -24,7 +24,12 @@ def money(value):
     return value or Decimal("0.00")
 
 
-def get_dashboard_data(user, month=None, year=None):
+def get_dashboard_data(
+    user,
+    month=None,
+    year=None,
+    branch_id=None,
+):
     today = timezone.localdate()
 
     month = month or today.month
@@ -37,8 +42,13 @@ def get_dashboard_data(user, month=None, year=None):
         raise ValueError("Invalid year.")
 
     branches = get_accessible_branches(user)
-    branch_ids = list(branches.values_list("id", flat=True))
 
+    if branch_id is not None:
+        branches = branches.filter(id=branch_id)
+
+    branch_ids = list(
+        branches.values_list("id", flat=True)
+    )
     # --------------------------------------------------
     # DATE RANGE
     # --------------------------------------------------
@@ -84,6 +94,20 @@ def get_dashboard_data(user, month=None, year=None):
     # accounting profit.
     operating_result = total_revenue - total_expenses
 
+    # Preliminary operating profit.
+    operating_profit = operating_result
+
+    # Profit margin as a percentage of revenue.
+    profit_margin = (
+        (operating_profit / total_revenue) * Decimal("100")
+        if total_revenue > 0
+        else Decimal("0.00")
+    )
+
+    # Revenue remaining after recorded expenses.
+    profit_margin = profit_margin.quantize(
+        Decimal("0.01")
+    )
     # --------------------------------------------------
     # CASH / BANK / UPI / PETTY CASH BALANCES
     # --------------------------------------------------
@@ -267,6 +291,8 @@ def get_dashboard_data(user, month=None, year=None):
             "monthly_revenue": total_revenue,
             "monthly_expenses": total_expenses,
             "operating_result": operating_result,
+            "operating_profit": operating_profit,
+            "profit_margin_percentage": profit_margin,
             "cash_and_bank_balance": cash_balance,
             "pending_supplier_payables": pending_payables,
             "pending_delivery_receivables": pending_receivables,

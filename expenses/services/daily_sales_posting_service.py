@@ -1,5 +1,8 @@
-from django.db import transaction,models
 from decimal import Decimal
+import logging
+
+from django.db import transaction, models
+
 from expenses.models import (
     DailySales,
     DailySalesPayment,
@@ -9,6 +12,43 @@ from expenses.models import (
     DeliveryPartnerCommissionRate,
 )
 
+from notifications.services.notification_service import (
+    notify_admins_and_managers,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _notify_daily_sales_posted(
+    *,
+    branch,
+    daily_sales_id,
+    business_date,
+    total_gross,
+):
+    """
+    Notify admins and branch managers after daily sales posting.
+    Notification failures must not affect financial operations.
+    """
+    try:
+        notify_admins_and_managers(
+            notification_type="INFO",
+            title="Daily Sales Posted",
+            message=(
+                f"Daily sales for {business_date} have been posted "
+                f"successfully. Total sales: ₹{total_gross}. "
+                f"Sales ID: {daily_sales_id}."
+            ),
+            module="FINANCE",
+            object_id=daily_sales_id,
+            branch=branch,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to send notification for Daily Sales ID %s",
+            daily_sales_id,
+        )
+
 
 @transaction.atomic
 def post_daily_sales(
@@ -16,19 +56,13 @@ def post_daily_sales(
     daily_sales: DailySales,
     created_by,
 ):
-    # --------------------------------------------------
-    # 1. Make sure the sale is still a DRAFT
-    # --------------------------------------------------
-
+    # 1. Check whether the sale is already posted
     if daily_sales.status == DailySales.Status.POSTED:
         raise ValueError(
             "Daily sales has already been posted."
         )
 
-    # --------------------------------------------------
     # 2. Lock the DailySales row
-    # --------------------------------------------------
-
     daily_sales = (
         DailySales.objects
         .select_for_update()
@@ -36,32 +70,21 @@ def post_daily_sales(
         .get(pk=daily_sales.pk)
     )
 
-    # --------------------------------------------------
     # 3. Double-check status after locking
-    # --------------------------------------------------
-
     if daily_sales.status == DailySales.Status.POSTED:
         raise ValueError(
             "Daily sales has already been posted."
         )
 
-    # --------------------------------------------------
-    # 4. Get all payment entries
-    # --------------------------------------------------
-
-    payments = list(
-        daily_sales.payments.all()
-    )
+    # 4. Get payment entries
+    payments = list(daily_sales.payments.all())
 
     if not payments:
         raise ValueError(
             "Daily sales has no payment entries."
         )
 
-    # --------------------------------------------------
-    # 5. Find the financial accounts
-    # --------------------------------------------------
-
+    # 5. Find financial accounts
     accounts = FinancialAccount.objects.filter(
         branch=daily_sales.branch,
         is_active=True,
@@ -87,12 +110,8 @@ def post_daily_sales(
         )
     ).first()
 
-    # --------------------------------------------------
     # 6. Process each payment
-    # --------------------------------------------------
-
     for payment in payments:
-
         account = None
 
         if payment.payment_method == DailySalesPayment.PaymentMethod.CASH:
@@ -116,24 +135,18 @@ def post_daily_sales(
                 f"payment method '{payment.payment_method}'."
             )
 
-        # --------------------------------------------------
         # Create financial transaction
-        # --------------------------------------------------
-
         FinancialTransaction.objects.create(
             branch=daily_sales.branch,
             account=account,
             transaction_type=(
                 FinancialTransaction.TransactionType.REVENUE
             ),
-            direction=(
-                FinancialTransaction.Direction.IN
-            ),
+            direction=FinancialTransaction.Direction.IN,
             amount=payment.amount,
             transaction_date=daily_sales.business_date,
             description=(
-                f"Daily sales - "
-                f"{payment.payment_method}"
+                f"Daily sales - {payment.payment_method}"
             ),
             reference=f"DAILY-SALES-{daily_sales.id}",
             created_by=created_by,
@@ -143,21 +156,16 @@ def post_daily_sales(
             DailySalesPayment.PaymentMethod.CARD,
             DailySalesPayment.PaymentMethod.FOOD_DELIVERY,
         }:
-
             commission_rate = Decimal("0.00")
             commission_amount = Decimal("0.00")
             expected_net_amount = payment.amount
             delivery_partner = None
 
-            # ----------------------------------------------
             # Food delivery commission
-            # ----------------------------------------------
-
             if (
                 payment.payment_method
                 == DailySalesPayment.PaymentMethod.FOOD_DELIVERY
             ):
-
                 delivery_partner = payment.delivery_partner
 
                 if delivery_partner is None:
@@ -204,14 +212,10 @@ def post_daily_sales(
                 )
 
                 expected_net_amount = (
-                    payment.amount
-                    - commission_amount
+                    payment.amount - commission_amount
                 )
 
-            # ----------------------------------------------
             # Create receivable
-            # ----------------------------------------------
-
             Receivable.objects.create(
                 branch=daily_sales.branch,
                 daily_sales_payment=payment,
@@ -229,16 +233,23 @@ def post_daily_sales(
                 created_by=created_by,
             )
 
-    # --------------------------------------------------
-    # 7. Mark Daily Sales as POSTED
-    # --------------------------------------------------
-
+    # 7. Mark daily sales as posted
     daily_sales.status = DailySales.Status.POSTED
     daily_sales.save(
         update_fields=[
             "status",
             "updated_at",
         ]
+    )
+
+    # 8. Notify only after the database transaction commits
+    transaction.on_commit(
+        lambda: _notify_daily_sales_posted(
+            branch=daily_sales.branch,
+            daily_sales_id=daily_sales.id,
+            business_date=daily_sales.business_date,
+            total_gross=daily_sales.total_gross,
+        )
     )
 
     return daily_sales

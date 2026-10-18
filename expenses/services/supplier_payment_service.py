@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 
 from django.db import transaction
@@ -14,6 +15,46 @@ from expenses.models import (
 from expenses.services.financial_transaction_service import (
     create_financial_transaction,
 )
+
+from notifications.services.notification_service import (
+    notify_admins_and_managers,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _notify_supplier_payment(
+    *,
+    branch,
+    payment_id,
+    supplier_name,
+    amount,
+    outstanding_amount,
+    status,
+):
+    """
+    Notify admins and branch managers after a supplier
+    payment has successfully committed.
+    """
+    try:
+        notify_admins_and_managers(
+            notification_type="INFO",
+            title="Supplier Payment Recorded",
+            message=(
+                f"Payment of ₹{amount} recorded for supplier "
+                f"{supplier_name}. Payment ID: {payment_id}. "
+                f"Outstanding payable: ₹{outstanding_amount}. "
+                f"Payable status: {status}."
+            ),
+            module="FINANCE",
+            object_id=payment_id,
+            branch=branch,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to send notification for supplier payment ID %s",
+            payment_id,
+        )
 
 
 @transaction.atomic
@@ -56,8 +97,7 @@ def create_supplier_payment(
             "Supplier payment must be greater than zero."
         )
 
-    # Reload and lock the payable row to prevent
-    # concurrent payments from overpaying it.
+    # 1. Lock the payable to prevent concurrent overpayments
     payable = (
         SupplierPayable.objects
         .select_for_update()
@@ -75,8 +115,7 @@ def create_supplier_payment(
             "outstanding payable."
         )
 
-    # Reload the account and lock its row while
-    # validating and recording the payment.
+    # 2. Lock and validate the payment account
     payment_account = (
         FinancialAccount.objects
         .select_for_update()
@@ -104,6 +143,7 @@ def create_supplier_payment(
             "This account cannot be used to pay a supplier."
         )
 
+    # 3. Create the supplier payment
     payment = SupplierPayment.objects.create(
         payable=payable,
         payment_account=payment_account,
@@ -114,6 +154,7 @@ def create_supplier_payment(
         created_by=created_by,
     )
 
+    # 4. Record the outgoing financial transaction
     create_financial_transaction(
         branch=payable.branch,
         account=payment_account,
@@ -133,6 +174,7 @@ def create_supplier_payment(
         ),
     )
 
+    # 5. Update payable balances
     payable.paid_amount += amount
     payable.outstanding_amount -= amount
 
@@ -150,8 +192,7 @@ def create_supplier_payment(
         ]
     )
 
-    # Keep the purchase payment status synchronized
-    # after both initial and subsequent payments.
+    # 6. Synchronize purchase payment status
     purchase = (
         Purchase.objects
         .select_for_update()
@@ -165,7 +206,23 @@ def create_supplier_payment(
     else:
         purchase.payment_status = Purchase.PaymentStatus.CREDIT
 
-    purchase.save(update_fields=["payment_status"])
+    purchase.save(
+        update_fields=["payment_status"]
+    )
+
+    # 7. Notify after the outermost transaction commits.
+    # Capture values now so the callback uses the correct
+    # payment details even if these objects change later.
+    transaction.on_commit(
+        lambda: _notify_supplier_payment(
+            branch=payable.branch,
+            payment_id=payment.id,
+            supplier_name=payable.supplier.name,
+            amount=payment.amount,
+            outstanding_amount=payable.outstanding_amount,
+            status=payable.status,
+        )
+    )
 
     return payment
 

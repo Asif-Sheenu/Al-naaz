@@ -55,11 +55,41 @@ from .permissions import (
     CanCreateStockUsage,
 )
 
+import logging
+
+from notifications.services.notification_service import (
+    notify_admins_and_managers,
+)
+
+logger = logging.getLogger(__name__)
+
 
 # ============================================================
 # SUPPLIER
 # ============================================================
-
+def send_inventory_notification(
+    *,
+    branch,
+    title,
+    message,
+    object_id=None,
+    notification_type="INFO",
+):
+    """Create branch-aware inventory notifications without breaking operations."""
+    try:
+        notify_admins_and_managers(
+            notification_type=notification_type,
+            title=title,
+            message=message,
+            module="INVENTORY",
+            object_id=object_id,
+            branch=branch,
+        )
+    except Exception:
+        logger.exception(
+            "Inventory notification failed for object %s",
+            object_id,
+        )
 class SupplierViewSet(viewsets.ModelViewSet):
 
     queryset = Supplier.objects.all()
@@ -266,6 +296,7 @@ class PurchaseViewSet(
                 f"Created purchase from "
                 f"{purchase.supplier.name}"
             ),
+            
             new_data={
                 "supplier": purchase.supplier.name,
                 "branch": purchase.branch.name,
@@ -279,6 +310,16 @@ class PurchaseViewSet(
                 "items": items_data,
             },
         )
+        send_inventory_notification(
+                        branch=purchase.branch,
+                        title="New Purchase Recorded",
+                        message=(
+                            f"Purchase #{purchase.pk} recorded from "
+                            f"{purchase.supplier.name} "
+                            f"for {purchase.branch.name}."
+                        ),
+                        object_id=purchase.pk,
+                        )
 
 
 class StockUsageViewSet(
@@ -407,12 +448,21 @@ class StockUsageViewSet(
             return response
 
     def perform_create(self, serializer):
-
         usage = serializer.save()
 
         process_usage(usage)
 
         self._created_usage = usage
+
+        send_inventory_notification(
+            branch=usage.branch,
+            title="Stock Usage Recorded",
+            message=(
+                f"Stock usage recorded for {usage.product.name} "
+                f"at {usage.branch.name}."
+            ),
+            object_id=usage.pk,
+        )
 
 # ============================================================
 # STOCK ADJUSTMENT
@@ -553,14 +603,24 @@ class StockAdjustmentViewSet(
             return response
 
     def perform_create(self, serializer):
-
         adjustment = serializer.save()
 
         process_stock_adjustment(
-            adjustment=adjustment
+            adjustment=adjustment,
         )
 
         self._created_adjustment = adjustment
+
+        send_inventory_notification(
+            branch=adjustment.branch,
+            title="Stock Adjustment Recorded",
+            message=(
+                f"Stock adjustment recorded for "
+                f"{adjustment.product.name} "
+                f"at {adjustment.branch.name}."
+            ),
+            object_id=adjustment.pk,
+        )
 
 
 class LiveStockView(APIView):

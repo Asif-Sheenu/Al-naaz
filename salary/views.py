@@ -18,6 +18,14 @@ from django.db.models import Sum
 from django.http import FileResponse
 from .pdf import generate_payslip_pdf
 from organization.services.access_service import get_accessible_branches
+import logging
+
+from notifications.services.notification_service import (
+    notify_admins_and_managers,
+)
+
+logger = logging.getLogger(__name__)
+
 
 class SalaryViewSet(viewsets.ReadOnlyModelViewSet):
 
@@ -25,6 +33,29 @@ class SalaryViewSet(viewsets.ReadOnlyModelViewSet):
 
     permission_classes = [CanManageSalary]
 
+    def send_salary_notification(
+        self,
+        *,
+        employee,
+        title,
+        message,
+        notification_type="INFO",
+        salary=None,
+    ):
+        try:
+            notify_admins_and_managers(
+                notification_type=notification_type,
+                title=title,
+                message=message,
+                module="SALARY",
+                object_id=salary.pk if salary else None,
+                branch=employee.branch,
+            )
+        except Exception:
+            logger.exception(
+                "Salary notification failed for employee %s",
+                employee.pk,
+            )
     def get_queryset(self):
 
         user = self.request.user
@@ -198,6 +229,16 @@ class SalaryViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        self.send_salary_notification(
+            employee=employee,
+            salary=salary,
+            title="Salary Generated",
+            message=(
+                f"Salary generated for {employee.name} "
+                f"for {month}/{year}."
+            ),
+        )
+
         serializer = self.get_serializer(salary)
 
         return Response(
@@ -206,16 +247,16 @@ class SalaryViewSet(viewsets.ReadOnlyModelViewSet):
         )
 # mark as paid -----------------------------------------------
 # 
+       # Pay employee salary
     @extend_schema(
-    request=None,
-    responses=SalarySerializer,
+        request=None,
+        responses=SalarySerializer,
     )
     @action(
         detail=True,
         methods=["post"],
     )
     def pay(self, request, pk=None):
-
         salary = self.get_object()
 
         try:
@@ -223,10 +264,29 @@ class SalaryViewSet(viewsets.ReadOnlyModelViewSet):
 
         except ValueError as exc:
             return Response(
-                {
-                    "error": str(exc)
-                },
+                {"error": str(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Notify admins and managers after successful payment.
+        try:
+            notify_admins_and_managers(
+                notification_type="INFO",
+                title="Salary Payment Completed",
+                message=(
+                    f"Salary payment completed for "
+                    f"{salary.employee} "
+                    f"for {salary.month}/{salary.year}."
+                ),
+                module="SALARY",
+                object_id=salary.pk,
+                branch=salary.employee.branch,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to create salary payment notification "
+                "for salary ID %s",
+                salary.pk,
             )
 
         serializer = self.get_serializer(salary)
@@ -239,25 +299,21 @@ class SalaryViewSet(viewsets.ReadOnlyModelViewSet):
             status=status.HTTP_200_OK,
         )
 
-    # all employee Salary-----------------------------
+    # Generate salaries for all eligible employees
     @extend_schema(
-    request=SalaryGenerateAllSerializer,
-    responses={200: SalaryGenerateAllResponseSerializer},
+        request=SalaryGenerateAllSerializer,
+        responses={200: SalaryGenerateAllResponseSerializer},
     )
     @action(
-    detail=False,
-    methods=["post"],
-    url_path="generate_all",
-)
+        detail=False,
+        methods=["post"],
+        url_path="generate_all",
+    )
     def generate_all(self, request):
-
         serializer = SalaryGenerateAllSerializer(
-            data=request.data
+            data=request.data,
         )
-
-        serializer.is_valid(
-            raise_exception=True
-        )
+        serializer.is_valid(raise_exception=True)
 
         month = serializer.validated_data["month"]
         year = serializer.validated_data["year"]
@@ -268,11 +324,30 @@ class SalaryViewSet(viewsets.ReadOnlyModelViewSet):
             year=year,
         )
 
+        # Notify only after bulk salary generation succeeds.
+        # Do not assume every employee belongs to the same branch.
+        try:
+            notify_admins_and_managers(
+                notification_type="INFO",
+                title="Bulk Salary Generation Completed",
+                message=(
+                    f"Bulk salary generation completed for "
+                    f"{month}/{year}."
+                ),
+                module="SALARY",
+            )
+        except Exception:
+            logger.exception(
+                "Failed to create bulk salary generation notification "
+                "for %s/%s",
+                month,
+                year,
+            )
+
         return Response(
             result,
             status=status.HTTP_200_OK,
         )
-
 
 # admin salary dashboardd =-----------------------------------------
 # 

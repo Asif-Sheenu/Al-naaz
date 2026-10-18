@@ -7,22 +7,29 @@ from ..models import Salary
 @transaction.atomic
 def mark_salary_as_paid(salary):
     """
-    Mark a pending salary as paid.
+    Mark a salary as paid safely.
+
+    Locks the database row to prevent concurrent requests
+    from paying the same salary simultaneously.
     """
 
-    if salary.status == Salary.Status.PAID:
-        raise ValueError(
-            "Salary is already paid."
-        )
+    locked_salary = (
+        Salary.objects
+        .select_for_update()
+        .get(pk=salary.pk)
+    )
 
-    salary.status = Salary.Status.PAID
-    salary.payment_date = timezone.now().date()
+    if locked_salary.status == Salary.Status.PAID:
+        raise ValueError("Salary is already paid.")
 
-    salary.save(
+    locked_salary.status = Salary.Status.PAID
+    locked_salary.payment_date = timezone.localdate()
+
+    locked_salary.save(
         update_fields=[
             "status",
             "payment_date",
         ]
     )
 
-    return salary
+    return locked_salary

@@ -14,6 +14,7 @@ CanCreateExpense,
     CanApproveExpenseAdjustment,
     CanViewFinance,
 )
+from rest_framework.exceptions import ValidationError
 from expenses.services.expense_adjustment_service import (
     request_expense_adjustment,
     approve_expense_adjustment,
@@ -41,6 +42,8 @@ from .models import (
     SupplierPayable,
     SupplierPayment,
 )
+from organization.models import Branch
+
 from .services.receivable_settlement_service import settle_receivable
 from .services.daily_sales_posting_service import post_daily_sales
 from rest_framework.decorators import action
@@ -69,6 +72,9 @@ from .serializers import (
     ExpenseAdjustmentRejectSerializer,
     SupplierPaymentSerializer,
     SupplierPayableSerializer,
+)
+from expenses.services.finance_dashboard_service import (
+    get_finance_dashboard,get_period_dates
 )
 from .services.daily_sales_service import create_daily_sales
 from django.db.models import Sum, Q
@@ -1583,3 +1589,56 @@ class SupplierPayableViewSet(
             )
 
         return queryset        
+
+
+
+class FinanceDashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        period = request.query_params.get(
+            "period",
+            "month",
+        ).lower()
+
+        # Validate the reporting period.
+        try:
+            get_period_dates(period)
+        except ValueError as exc:
+            raise ValidationError({
+                "period": str(exc)
+            })
+
+        # Determine which branches the user can access.
+        if user.is_superuser or user.role == "ADMIN":
+            branches = Branch.objects.all()
+        else:
+            branches = get_accessible_branches(user)
+
+        # Optional branch filter.
+        branch_id = request.query_params.get("branch")
+
+        if branch_id:
+            if not branch_id.isdigit():
+                raise ValidationError({
+                    "branch": "Branch must be a valid integer ID."
+                })
+
+            branches = branches.filter(id=int(branch_id))
+
+            if not branches.exists():
+                raise ValidationError({
+                    "branch": (
+                        "Branch does not exist or you do not "
+                        "have permission to access it."
+                    )
+                })
+
+        dashboard = get_finance_dashboard(
+            branches=branches,
+            period=period,
+        )
+
+        return Response(dashboard)    

@@ -18,7 +18,8 @@ from .views import (
 DeliveryPartnerCommissionRateViewSet,
 ExpenseAdjustmentViewSet,
 SupplierPaymentViewSet,
-SupplierPayableViewSet
+SupplierPayableViewSet,
+FinanceDashboardView
 )
 
 
@@ -104,6 +105,8 @@ router.register(
     basename="supplier-payable"
 )
 
+
+
 urlpatterns = [
     path("", include(router.urls)),
 
@@ -130,5 +133,12 @@ urlpatterns = [
         "reports/yearly/",
         YearlyExpenseReportView.as_view(),
         name="yearly-expense-report"
+    ),
+
+
+    path(
+    "finance/dashboard/",
+    FinanceDashboardView.as_view(),
+    name="finance-dashboard",
     ),
 ]
