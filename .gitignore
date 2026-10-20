@@ -21,3 +21,18 @@ media/
 # OS
 .DS_Store
 Thumbs.db
+
+# Environment files
+.env.*
+!.env.example
+
+# Docker
+docker-compose.override.yml
+
+# Database backups
+*.sql
+*.dump
+*.backup
+
+# Local database files
+*.sqlite3
