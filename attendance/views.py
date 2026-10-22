@@ -789,3 +789,131 @@ class AttendanceViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )    
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="branch",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter by branch ID.",
+            ),
+            OpenApiParameter(
+                name="employee",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter by employee ID.",
+            ),
+            OpenApiParameter(
+                name="month",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter by month (1-12).",
+            ),
+            OpenApiParameter(
+                name="year",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter by year.",
+            ),
+            OpenApiParameter(
+                name="start_date",
+                type=OpenApiTypes.DATE,
+                location=OpenApiParameter.QUERY,
+                description="Start date (YYYY-MM-DD).",
+            ),
+            OpenApiParameter(
+                name="end_date",
+                type=OpenApiTypes.DATE,
+                location=OpenApiParameter.QUERY,
+                description="End date (YYYY-MM-DD).",
+            ),
+            OpenApiParameter(
+                name="is_paid",
+                type=OpenApiTypes.BOOL,
+                location=OpenApiParameter.QUERY,
+                description="Filter by paid or unpaid leave.",
+            ),
+            OpenApiParameter(
+                name="search",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Search employee name.",
+            ),
+        ],
+        responses=AttendanceSerializer(many=True),
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="leaves",
+    )
+    def leaves(self, request):
+        queryset = self.get_queryset().filter(
+            status=Attendance.Status.LEAVE,
+        )
+
+        branch = request.query_params.get("branch")
+        employee = request.query_params.get("employee")
+        month = request.query_params.get("month")
+        year = request.query_params.get("year")
+        start_date = request.query_params.get("start_date")
+        end_date = request.query_params.get("end_date")
+        is_paid = request.query_params.get("is_paid")
+        search = request.query_params.get("search")
+
+        if branch:
+            queryset = queryset.filter(
+                employee__branch_id=branch,
+            )
+
+        if employee:
+            queryset = queryset.filter(
+                employee_id=employee,
+            )
+
+        if month:
+            queryset = queryset.filter(
+                date__month=month,
+            )
+
+        if year:
+            queryset = queryset.filter(
+                date__year=year,
+            )
+
+        if start_date:
+            queryset = queryset.filter(
+                date__gte=start_date,
+            )
+
+        if end_date:
+            queryset = queryset.filter(
+                date__lte=end_date,
+            )
+
+        if is_paid is not None:
+            if is_paid.lower() not in ("true", "false"):
+                return Response(
+                    {"detail": "is_paid must be true or false."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            queryset = queryset.filter(
+                is_paid=is_paid.lower() == "true",
+            )
+
+        if search:
+            queryset = queryset.filter(
+                employee__name__icontains=search,
+            )
+
+        serializer = self.get_serializer(
+            queryset,
+            many=True,
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )

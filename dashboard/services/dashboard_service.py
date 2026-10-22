@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.db.models import Sum, Count, Q
 from django.utils import timezone
+import calendar
 
 from organization.services.access_service import get_accessible_branches
 from employees.models import Employee
@@ -17,6 +18,8 @@ from expenses.models import (
 )
 from inventory.models import Product, StockBalance
 from expenses.services.financial_account_service import get_account_balance
+from datetime import date
+from django.db.models.functions import ExtractMonth
 
 
 def money(value):
@@ -280,6 +283,70 @@ def get_dashboard_data(
             ),
         })
 
+
+        # --------------------------------------------------
+            # YEARLY REVENUE & EXPENSES CHART
+        # --------------------------------------------------
+        
+            
+        
+    year_start = date(year, 1, 1)
+    year_end = date(year, 12, 31)
+        
+    yearly_sales = (
+                DailySales.objects.filter(
+                    branch_id__in=branch_ids,
+                    business_date__range=(year_start, year_end),
+                    status=DailySales.Status.POSTED,
+                )
+                .annotate(
+                    month_number=ExtractMonth("business_date")
+                )
+                .values("month_number")
+                .annotate(
+                    total=Sum("total_gross")
+                )
+            )
+        
+    yearly_expenses = (
+                Expense.objects.filter(
+                    branch_id__in=branch_ids,
+                    expense_date__range=(year_start, year_end),
+                )
+                .annotate(
+                    month_number=ExtractMonth("expense_date")
+                )
+                .values("month_number")
+                .annotate(
+                    total=Sum("amount")
+                )
+            )
+        
+    revenue_by_month = {
+                row["month_number"]: money(row["total"])
+                for row in yearly_sales
+            }
+        
+    expenses_by_month = {
+                row["month_number"]: money(row["total"])
+                for row in yearly_expenses
+            }
+        
+        
+    yearly_chart = [
+                {
+                    "month": month_number,
+                    "month_name": calendar.month_name[month_number],
+                    "revenue": revenue_by_month.get(
+                        month_number, Decimal("0.00")
+                    ),
+                    "expenses": expenses_by_month.get(
+                        month_number, Decimal("0.00")
+                    ),
+                }
+                for month_number in range(1, 13)
+            ]
+
     return {
         "period": {
             "month": month,
@@ -287,6 +354,8 @@ def get_dashboard_data(
             "start_date": start_date,
             "end_date": end_date,
         },
+        "yearly_chart": yearly_chart,
+
         "financial_summary": {
             "monthly_revenue": total_revenue,
             "monthly_expenses": total_expenses,
@@ -305,3 +374,6 @@ def get_dashboard_data(
         "expense_breakdown": expense_breakdown,
         "branch_performance": branch_performance,
     }
+
+
+    

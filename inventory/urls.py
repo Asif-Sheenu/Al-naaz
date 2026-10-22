@@ -9,7 +9,8 @@ from .views import (
     LiveStockView,
     StockLedgerView,
     SupplierPurchaseHistoryView,
-    ProductCategoryViewSet
+    ProductCategoryViewSet,
+    LowStockView,
 )
 
 router = DefaultRouter()
@@ -55,6 +56,12 @@ urlpatterns = router.urls + [
         "stock/",
         LiveStockView.as_view(),
         name="live-stock"
+    ),
+
+    path(
+    "stock/low-stock/",
+    LowStockView.as_view(),
+    name="low-stock",
     ),
 
     path(

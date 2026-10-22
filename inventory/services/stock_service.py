@@ -9,7 +9,6 @@ from core.cache.constants import (
 
 
 def get_live_stock(params=None):
-
     params = params or {}
 
     search = params.get("search")
@@ -43,35 +42,21 @@ def get_live_stock(params=None):
         .order_by("name")
     )
 
-    # Search by product name
     if search:
         products = products.filter(
-            name__icontains=search
+            name__icontains=search.strip()
         )
 
-    # Filter by category
     if category:
         products = products.filter(
-            category__iexact=category
+            category__iexact=category.strip()
         )
 
     # ------------------------------------------------------------
     # STOCK BALANCES
     # ------------------------------------------------------------
 
-    # If a branch is supplied, only return stock
-    # for that branch.
-    #
-    # If no branch is supplied, calculate total
-    # stock across branches.
-
-    stock_balances = (
-        StockBalance.objects
-        .select_related(
-            "product",
-            "branch",
-        )
-    )
+    stock_balances = StockBalance.objects.all()
 
     if branch:
         stock_balances = stock_balances.filter(
@@ -85,7 +70,6 @@ def get_live_stock(params=None):
     stock_lookup = {}
 
     for balance in stock_balances:
-
         product_id = balance.product_id
 
         stock_lookup[product_id] = (
@@ -100,10 +84,9 @@ def get_live_stock(params=None):
     stock_data = []
 
     for product in products:
-
         current_stock = stock_lookup.get(
             product.id,
-            0
+            0,
         )
 
         if current_stock <= 0:
@@ -115,10 +98,7 @@ def get_live_stock(params=None):
         else:
             stock_status = "GOOD"
 
-        if (
-            status
-            and status.upper() != stock_status
-        ):
+        if status and status.upper() != stock_status:
             continue
 
         stock_data.append({
@@ -143,8 +123,155 @@ def get_live_stock(params=None):
     return stock_data
 
 
-def get_stock_ledger(params=None):
+def get_low_stock(params=None):
+    """
+    Return products whose stock is at or below minimum_stock.
 
+    When branch is supplied, calculate stock separately for that
+    branch. When branch is omitted, return low-stock results for
+    every branch, with each branch reported separately.
+
+    Products without a StockBalance record are treated as having
+    zero stock for each branch included in the response.
+    """
+
+    params = params or {}
+
+    search = params.get("search")
+    category = params.get("category")
+    branch = params.get("branch")
+
+    # ------------------------------------------------------------
+    # PRODUCTS
+    # ------------------------------------------------------------
+
+    products = (
+        Product.objects
+        .filter(is_active=True)
+        .order_by("name")
+    )
+
+    if search:
+        products = products.filter(
+            name__icontains=search.strip()
+        )
+
+    if category:
+        products = products.filter(
+            category__iexact=category.strip()
+        )
+
+    # ------------------------------------------------------------
+    # STOCK BALANCES
+    # ------------------------------------------------------------
+
+    stock_balances = (
+        StockBalance.objects
+        .select_related("product", "branch")
+        .filter(
+            product__is_active=True,
+        )
+    )
+
+    if branch:
+        stock_balances = stock_balances.filter(
+            branch_id=branch
+        )
+
+    if search:
+        stock_balances = stock_balances.filter(
+            product__name__icontains=search.strip()
+        )
+
+    if category:
+        stock_balances = stock_balances.filter(
+            product__category__iexact=category.strip()
+        )
+
+    # ------------------------------------------------------------
+    # BUILD BRANCH STOCK LOOKUP
+    # ------------------------------------------------------------
+
+    stock_lookup = {}
+
+    branches = {}
+
+    for balance in stock_balances:
+        key = (
+            balance.branch_id,
+            balance.product_id,
+        )
+
+        stock_lookup[key] = balance.quantity
+        branches[balance.branch_id] = balance.branch
+
+    # ------------------------------------------------------------
+    # DETERMINE BRANCHES TO CHECK
+    # ------------------------------------------------------------
+
+    if branch:
+        branch_ids = [int(branch)]
+    else:
+        branch_ids = list(
+            StockBalance.objects
+            .values_list("branch_id", flat=True)
+            .distinct()
+        )
+
+        # Include branches represented by existing stock balances.
+        for branch_id in branch_ids:
+            if branch_id not in branches:
+                from organization.models import Branch
+
+                branch_obj = Branch.objects.filter(
+                    id=branch_id
+                ).first()
+
+                if branch_obj:
+                    branches[branch_id] = branch_obj
+
+    # ------------------------------------------------------------
+    # BUILD LOW-STOCK RESPONSE
+    # ------------------------------------------------------------
+
+    stock_data = []
+
+    for branch_id in branch_ids:
+        branch_obj = branches.get(branch_id)
+
+        if not branch_obj:
+            continue
+
+        for product in products:
+            current_stock = stock_lookup.get(
+                (branch_id, product.id),
+                0,
+            )
+
+            if current_stock > product.minimum_stock:
+                continue
+
+            stock_status = (
+                "OUT_OF_STOCK"
+                if current_stock <= 0
+                else "LOW_STOCK"
+            )
+
+            stock_data.append({
+                "product": product.id,
+                "product_name": product.name,
+                "unit": product.unit,
+                "branch": branch_id,
+                "branch_name": branch_obj.name,
+                "current_stock": current_stock,
+                "minimum_stock": product.minimum_stock,
+                "status": stock_status,
+            })
+
+    return stock_data
+
+
+def get_stock_ledger(params=None):
     params = params or {}
 
     product = params.get("product")

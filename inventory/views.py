@@ -35,6 +35,8 @@ from .services.usage_service import process_usage
 from .services.stock_service import (
     get_live_stock,
     get_stock_ledger,
+    get_low_stock,
+
 )
 
 from .services.purchase_service import (
@@ -700,6 +702,68 @@ class LiveStockView(APIView):
             serializer.data
         )
 
+
+class LowStockView(APIView):
+    permission_classes = [CanViewInventory]
+
+    def get(self, request):
+        params = request.query_params.copy()
+        user = request.user
+
+        requested_branch = params.get("branch")
+
+        # Get branches this user is allowed to access.
+        accessible_branches = get_accessible_branches(user)
+        accessible_branch_ids = list(
+            accessible_branches.values_list("id", flat=True)
+        )
+
+        # ------------------------------------------------
+        # ADMIN ACCESS
+        # ------------------------------------------------
+
+        if user.is_superuser or user.role == "ADMIN":
+            if requested_branch:
+                if not accessible_branches.filter(
+                    id=requested_branch
+                ).exists():
+                    return Response(
+                        {"detail": "Invalid or inactive branch."},
+                        status=400,
+                    )
+
+            return Response(get_low_stock(params))
+
+        # ------------------------------------------------
+        # MANAGER / STAFF ACCESS
+        # ------------------------------------------------
+
+        if requested_branch:
+            if not accessible_branches.filter(
+                id=requested_branch
+            ).exists():
+                return Response(
+                    {
+                        "detail": (
+                            "You do not have access to this branch."
+                        )
+                    },
+                    status=403,
+                )
+
+            return Response(get_low_stock(params))
+
+        # No branch supplied: fetch results only for
+        # the user's assigned active branches.
+        results = []
+
+        for branch_id in accessible_branch_ids:
+            branch_params = params.copy()
+            branch_params["branch"] = str(branch_id)
+
+            results.extend(get_low_stock(branch_params))
+
+        return Response(results)
 
 # ============================================================
 # STOCK LEDGER
