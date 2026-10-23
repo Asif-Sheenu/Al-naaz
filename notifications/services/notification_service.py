@@ -1,7 +1,6 @@
-
 from django.contrib.auth import get_user_model
 
-from ..models import Notification
+from notifications.models import Notification
 
 
 User = get_user_model()
@@ -16,8 +15,9 @@ def _create_notifications(
     module,
     object_id=None,
 ):
-    """Create one notification per active, unique recipient."""
-
+    """
+    Create one notification per active, unique recipient.
+    """
     notifications = []
     seen_user_ids = set()
 
@@ -54,13 +54,12 @@ def notify_admins_and_managers(
     branch=None,
 ):
     """
-    Notify active Admins and Managers.
+    Notify active admins and managers.
 
     Admins receive notifications across branches.
-    When a branch is supplied, Managers must be assigned
+    When a branch is provided, managers must be assigned
     to that branch.
     """
-
     admins = User.objects.filter(
         role="ADMIN",
         is_active=True,
@@ -88,6 +87,54 @@ def notify_admins_and_managers(
     )
 
 
+def notify_clearance_approvers(
+    *,
+    approval_stage,
+    title,
+    message,
+    object_id,
+    branch,
+):
+    """
+    Notify only the users responsible for the next
+    clearance approval stage.
+
+    MANAGER:
+        Notify managers assigned to the item's branch.
+
+    ADMIN:
+        Notify active admins across branches.
+    """
+    approval_stage = approval_stage.upper()
+
+    if approval_stage == "MANAGER":
+        recipients = User.objects.filter(
+            role="MANAGER",
+            is_active=True,
+            branches=branch,
+        )
+
+    elif approval_stage == "ADMIN":
+        recipients = User.objects.filter(
+            role="ADMIN",
+            is_active=True,
+        )
+
+    else:
+        raise ValueError(
+            f"Invalid clearance approval stage: {approval_stage}"
+        )
+
+    return _create_notifications(
+        recipients=recipients,
+        notification_type=Notification.NotificationType.APPROVAL,
+        title=title,
+        message=message,
+        module="CLEARANCE",
+        object_id=object_id,
+    )
+
+
 def notify_user(
     *,
     user,
@@ -97,8 +144,9 @@ def notify_user(
     module,
     object_id=None,
 ):
-    """Notify one specific active user."""
-
+    """
+    Notify one specific active user.
+    """
     if user is None or not user.is_active:
         return None
 

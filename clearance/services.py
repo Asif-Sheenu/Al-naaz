@@ -64,9 +64,17 @@ def issue_item(
     notes="",
 ):
     """
-    Record an item that staff have already physically issued.
+    Create a clearance item and automatically satisfy the approval
+    stage associated with the creator's role.
 
-    The record begins at PENDING_MANAGER.
+    STAFF:
+        PENDING_MANAGER
+
+    MANAGER:
+        Manager stage satisfied -> PENDING_ADMIN
+
+    ADMIN:
+        Admin stage satisfied -> PENDING_MANAGER
     """
 
     if employee is None:
@@ -120,6 +128,45 @@ def issue_item(
     if issued_date is None:
         issued_date = timezone.localdate()
 
+    # Determine which approval stage the creator is authorized
+    # to satisfy automatically.
+    role = getattr(issued_by, "role", None)
+
+    is_admin = (
+        role == "ADMIN"
+        or getattr(issued_by, "is_superuser", False)
+    )
+
+    is_manager = role == "MANAGER"
+
+    manager_approved_by = None
+    manager_approved_at = None
+
+    admin_approved_by = None
+    admin_approved_at = None
+
+    if is_admin:
+        # Admin stage is satisfied by the creating admin.
+        approval_status = (
+            IssuedItem.ApprovalStatus.PENDING_MANAGER
+        )
+        admin_approved_by = issued_by
+        admin_approved_at = timezone.now()
+
+    elif is_manager:
+        # Manager stage is satisfied by the creating manager.
+        approval_status = (
+            IssuedItem.ApprovalStatus.PENDING_ADMIN
+        )
+        manager_approved_by = issued_by
+        manager_approved_at = timezone.now()
+
+    else:
+        # Staff-created items require both approval stages.
+        approval_status = (
+            IssuedItem.ApprovalStatus.PENDING_MANAGER
+        )
+
     return IssuedItem.objects.create(
         employee=employee,
         item_name=item_name.strip(),
@@ -129,16 +176,20 @@ def issue_item(
         issued_by=issued_by,
         issued_date=issued_date,
         notes=notes,
-        approval_status=IssuedItem.ApprovalStatus.PENDING_MANAGER,
+        approval_status=approval_status,
+        manager_approved_by=manager_approved_by,
+        manager_approved_at=manager_approved_at,
+        admin_approved_by=admin_approved_by,
+        admin_approved_at=admin_approved_at,
     )
-
 
 @transaction.atomic
 def approve_by_manager(*, issued_item_id, approved_by):
     """
-    Manager approves an item and sends it for final admin approval.
+    Record manager approval.
 
-    Role and branch permissions must also be enforced by the API.
+    If the admin stage has already been satisfied, the item becomes
+    APPROVED. Otherwise, it moves to PENDING_ADMIN.
     """
 
     if approved_by is None:
@@ -158,36 +209,57 @@ def approve_by_manager(*, issued_item_id, approved_by):
             "issued_item": "Issued item not found."
         })
 
-    if item.approval_status != IssuedItem.ApprovalStatus.PENDING_MANAGER:
+    if (
+        item.approval_status
+        != IssuedItem.ApprovalStatus.PENDING_MANAGER
+    ):
         raise ValidationError({
-            "approval_status": "This item is not awaiting manager approval."
+            "approval_status": (
+                "This item is not awaiting manager approval."
+            )
         })
 
     if item.issued_by_id == approved_by.pk:
         raise ValidationError({
-            "approved_by": "The issuing user cannot approve their own item."
+            "approved_by": (
+                "The issuing user cannot approve their own item."
+            )
         })
 
-    item.approval_status = IssuedItem.ApprovalStatus.PENDING_ADMIN
     item.manager_approved_by = approved_by
     item.manager_approved_at = timezone.now()
     item.rejection_reason = ""
 
-    item.save(update_fields=[
-        "approval_status",
-        "manager_approved_by",
-        "manager_approved_at",
-        "rejection_reason",
-        "updated_at",
-    ])
+    if item.admin_approved_by_id is not None:
+        # The admin stage was already satisfied.
+        item.approval_status = (
+            IssuedItem.ApprovalStatus.APPROVED
+        )
+    else:
+        # Admin approval is still required.
+        item.approval_status = (
+            IssuedItem.ApprovalStatus.PENDING_ADMIN
+        )
+
+    item.save(
+        update_fields=[
+            "approval_status",
+            "manager_approved_by",
+            "manager_approved_at",
+            "rejection_reason",
+            "updated_at",
+        ]
+    )
 
     return item
-
 
 @transaction.atomic
 def approve_by_admin(*, issued_item_id, approved_by):
     """
-    Admin provides final approval for an item.
+    Record final admin approval.
+
+    If the manager stage has already been satisfied, the item becomes
+    APPROVED. Otherwise, it moves to PENDING_MANAGER.
     """
 
     if approved_by is None:
@@ -207,36 +279,56 @@ def approve_by_admin(*, issued_item_id, approved_by):
             "issued_item": "Issued item not found."
         })
 
-    if item.approval_status != IssuedItem.ApprovalStatus.PENDING_ADMIN:
+    if (
+        item.approval_status
+        != IssuedItem.ApprovalStatus.PENDING_ADMIN
+    ):
         raise ValidationError({
-            "approval_status": "This item is not awaiting admin approval."
+            "approval_status": (
+                "This item is not awaiting admin approval."
+            )
         })
 
     if item.issued_by_id == approved_by.pk:
         raise ValidationError({
-            "approved_by": "The issuing user cannot approve their own item."
+            "approved_by": (
+                "The issuing user cannot approve their own item."
+            )
         })
 
     if item.manager_approved_by_id == approved_by.pk:
         raise ValidationError({
-            "approved_by": "The manager approver cannot give final approval."
+            "approved_by": (
+                "The manager approver cannot give final approval."
+            )
         })
 
-    item.approval_status = IssuedItem.ApprovalStatus.APPROVED
     item.admin_approved_by = approved_by
     item.admin_approved_at = timezone.now()
     item.rejection_reason = ""
 
-    item.save(update_fields=[
-        "approval_status",
-        "admin_approved_by",
-        "admin_approved_at",
-        "rejection_reason",
-        "updated_at",
-    ])
+    if item.manager_approved_by_id is not None:
+        # The manager stage was already satisfied.
+        item.approval_status = (
+            IssuedItem.ApprovalStatus.APPROVED
+        )
+    else:
+        # Manager approval is still required.
+        item.approval_status = (
+            IssuedItem.ApprovalStatus.PENDING_MANAGER
+        )
+
+    item.save(
+        update_fields=[
+            "approval_status",
+            "admin_approved_by",
+            "admin_approved_at",
+            "rejection_reason",
+            "updated_at",
+        ]
+    )
 
     return item
-
 
 @transaction.atomic
 def reject_issued_item(
