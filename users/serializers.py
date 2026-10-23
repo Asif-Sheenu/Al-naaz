@@ -230,3 +230,32 @@ class ManagedUserSerializer(serializers.ModelSerializer):
             "is_active",
             "created_at",
         ]
+
+
+class ManagedUserUpdateSerializer(serializers.ModelSerializer):
+    branches = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Branch.objects.filter(is_active=True),
+        required=False,
+    )
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "username",
+            "email",
+            "phone",
+            "role",
+            "branches",
+            "is_active",
+            "created_at",
+        ]
+
+        read_only_fields = [
+            "id",
+            "username",
+            "role",
+            "is_active",
+            "created_at",
+        ]        

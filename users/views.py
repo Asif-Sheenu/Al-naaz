@@ -3,10 +3,11 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .permissions import IsAdmin
-from .serializers import UserSerializer,UserUpdateSerializer,LoginSerializer,ManagedUserCreateSerializer,ManagedUserSerializer
+from .serializers import UserSerializer,UserUpdateSerializer,LoginSerializer,ManagedUserCreateSerializer,ManagedUserSerializer,ManagedUserUpdateSerializer
 from rest_framework import status,viewsets
 from rest_framework import generics
 from .models import User
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
@@ -17,6 +18,10 @@ from users.permissions import (
     IsAdminOrManager,
     IsAdminOrStaff,
 )
+from rest_framework_simplejwt.settings import api_settings
+
+from rest_framework.permissions import AllowAny
+from rest_framework.exceptions import ValidationError
 
 
 
@@ -60,9 +65,12 @@ class LoginView(APIView):
             key="access_token",
             value=str(access),
             httponly=True,
-            secure=True,      # Change to True in production (HTTPS)
+            secure=True,
             samesite="None",
-            max_age=60 * 60
+            max_age=int(
+                api_settings.ACCESS_TOKEN_LIFETIME.total_seconds()
+            ),
+            path="/",
         )
 
         response.set_cookie(
@@ -71,7 +79,10 @@ class LoginView(APIView):
             httponly=True,
             secure=True,
             samesite="None",
-            max_age=60 * 60 * 24 * 7
+            max_age=int(
+                api_settings.REFRESH_TOKEN_LIFETIME.total_seconds()
+            ),
+            path="/",
         )
 
         return response
@@ -153,52 +164,92 @@ class StaffDeactivateView(generics.UpdateAPIView):
         })
 
 
-
 class RefreshView(APIView):
-
-    permission_classes = []
+    permission_classes = [AllowAny]
+    authentication_classes = []
 
     def post(self, request):
-
         refresh_token = request.COOKIES.get("refresh_token")
 
         if not refresh_token:
-            return Response(
-                {"error": "Refresh token not found"},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-
-        try:
-
-            refresh = RefreshToken(refresh_token)
-
-            access = refresh.access_token
-
             response = Response(
                 {
-                    "message": "Token refreshed"
+                    "error": "Refresh token missing. Please log in again."
                 },
-                status=status.HTTP_200_OK
+                status=status.HTTP_401_UNAUTHORIZED,
             )
+            self.clear_auth_cookies(response)
+            return response
 
+        serializer = TokenRefreshSerializer(
+            data={"refresh": refresh_token}
+        )
+
+        try:
+            serializer.is_valid(raise_exception=True)
+
+        except ValidationError:
+            response = Response(
+                {
+                    "error": (
+                        "Refresh token expired or invalid. "
+                        "Please log in again."
+                    )
+                },
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+            self.clear_auth_cookies(response)
+            return response
+
+        tokens = serializer.validated_data
+
+        response = Response(
+            {
+                "message": "Token refreshed successfully"
+            },
+            status=status.HTTP_200_OK,
+        )
+
+        response.set_cookie(
+            key="access_token",
+            value=tokens["access"],
+            httponly=True,
+            secure=True,
+            samesite="None",
+            max_age=int(
+                api_settings.ACCESS_TOKEN_LIFETIME.total_seconds()
+            ),
+            path="/",
+        )
+
+        # With rotation enabled, Simple JWT returns a new refresh token.
+        if "refresh" in tokens:
             response.set_cookie(
-                key="access_token",
-                value=str(access),
+                key="refresh_token",
+                value=tokens["refresh"],
                 httponly=True,
                 secure=True,
                 samesite="None",
-                max_age=60 * 60
+                max_age=int(
+                    api_settings.REFRESH_TOKEN_LIFETIME.total_seconds()
+                ),
+                path="/",
             )
 
-            return response
+        return response
 
-        except TokenError:
-
-            return Response(
-                {"error": "Invalid refresh token"},
-                status=status.HTTP_401_UNAUTHORIZED
-            )    
-
+    @staticmethod
+    def clear_auth_cookies(response):
+        response.delete_cookie(
+            "access_token",
+            path="/",
+            samesite="None",
+        )
+        response.delete_cookie(
+            "refresh_token",
+            path="/",
+            samesite="None",
+        )
 
 class LogoutView(APIView):
 
@@ -239,6 +290,9 @@ class UserManagementViewSet(viewsets.ModelViewSet):
         if self.action == "create":
             return ManagedUserCreateSerializer
 
+        if self.action in ["update", "partial_update"]:
+            return ManagedUserUpdateSerializer
+        
         return ManagedUserSerializer
 
     def create(self, request, *args, **kwargs):

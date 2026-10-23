@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+     "rest_framework_simplejwt.token_blacklist",
 'corsheaders',
 'inventory',
 'notifications',
@@ -54,6 +55,7 @@ INSTALLED_APPS = [
 'expenses',
 'reports',
 'advance',
+"clearance",
 'organization',
 "drf_spectacular",  
 ]
@@ -176,15 +178,18 @@ from datetime import timedelta
 
 SIMPLE_JWT = {
 
-'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
+'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
 
 'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 
-'ROTATE_REFRESH_TOKENS': False,
+'ROTATE_REFRESH_TOKENS': True,
 
 'BLACKLIST_AFTER_ROTATION': True,
 
+"AUTH_HEADER_TYPES": ("Bearer",),
+
 }
+
 from corsheaders.defaults import default_headers
 
 
