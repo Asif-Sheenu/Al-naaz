@@ -3,6 +3,7 @@ from rest_framework import serializers
 from .models import IssuedItem, ClearancePayment
 
 
+
 class ClearancePaymentSerializer(serializers.ModelSerializer):
     recorded_by_name = serializers.CharField(
         source="recorded_by.username",
@@ -120,3 +121,23 @@ class IssuedItemSerializer(serializers.ModelSerializer):
         from .services import get_clearance_balance
 
         return get_clearance_balance(obj)
+
+
+
+
+
+
+class ClearanceRejectionSerializer(serializers.Serializer):
+    rejection_reason = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        trim_whitespace=True,
+    )
+
+    stage = serializers.ChoiceField(
+        choices=[
+            ("MANAGER", "Manager"),
+            ("ADMIN", "Admin"),
+        ],
+        required=True,
+    )    

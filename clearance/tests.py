@@ -136,11 +136,11 @@ class ClearanceApprovalWorkflowTests(TestCase):
         item = approve_by_manager(
             issued_item_id=item.pk,
             approved_by=self.manager,
-        )
+    )
 
         self.assertEqual(
             item.approval_status,
-            IssuedItem.ApprovalStatus.APPROVED,
+            IssuedItem.ApprovalStatus.APPROVED
         )
 
         self.assertEqual(item.manager_approved_by, self.manager)
@@ -547,4 +547,109 @@ class ClearanceNotificationAPITests(APITestCase):
         )
 
         self.assertIn(reason, notification.message)
-        
+
+
+    def test_rejection_requires_reason(self):
+        response = self.create_item_through_api()
+        item_id = response.data["id"]
+
+        self.client.force_authenticate(user=self.manager_a)
+
+        response = self.client.post(
+            f"/api/clearance/items/{item_id}/reject/",
+            {"stage": "MANAGER"},
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+
+    def test_rejection_requires_valid_stage(self):
+        response = self.create_item_through_api()
+        item_id = response.data["id"]
+
+        self.client.force_authenticate(user=self.manager_a)
+
+        response = self.client.post(
+            f"/api/clearance/items/{item_id}/reject/",
+            {
+                "rejection_reason": "Incorrect quantity",
+                "stage": "INVALID",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+    )
+
+
+    def test_rejection_requires_reason(self):
+        response = self.create_item_through_api()
+        item_id = response.data["id"]
+
+        self.client.force_authenticate(user=self.manager_a)
+
+        response = self.client.post(
+            f"/api/clearance/items/{item_id}/reject/",
+            {"stage": "MANAGER"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+    def test_rejection_requires_valid_stage(self):
+        response = self.create_item_through_api()
+        item_id = response.data["id"]
+
+        self.client.force_authenticate(user=self.manager_a)
+
+        response = self.client.post(
+            f"/api/clearance/items/{item_id}/reject/",
+            {
+                "rejection_reason": "Incorrect quantity",
+                "stage": "INVALID",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+
+    def test_rejection_requires_reason(self):
+        response = self.create_item_through_api()
+        item_id = response.data["id"]
+
+        self.client.force_authenticate(user=self.manager_a)
+
+        response = self.client.post(
+            f"/api/clearance/items/{item_id}/reject/",
+            {"stage": "MANAGER"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+    def test_rejection_requires_valid_stage(self):
+        response = self.create_item_through_api()
+        item_id = response.data["id"]
+
+        self.client.force_authenticate(user=self.manager_a)
+
+        response = self.client.post(
+            f"/api/clearance/items/{item_id}/reject/",
+            {
+                "rejection_reason": "Incorrect quantity",
+                "stage": "INVALID",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

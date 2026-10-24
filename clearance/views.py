@@ -31,6 +31,7 @@ from .permissions import IsAdminManagerOrStaff
 from .serializers import (
     IssuedItemSerializer,
     ClearancePaymentSerializer,
+    ClearanceRejectionSerializer
 )
 
 from .services import (
@@ -399,7 +400,10 @@ class RejectClearanceItemView(APIView):
         IsAuthenticated,
         IsAdminOrManager,
     ]
-
+    @extend_schema(
+        request=ClearanceRejectionSerializer,
+        responses={200: IssuedItemSerializer},
+    )
     def post(self, request, pk):
         item = get_accessible_items(
             request.user
