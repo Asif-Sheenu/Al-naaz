@@ -3,7 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .permissions import IsAdmin
-from .serializers import UserSerializer,UserUpdateSerializer,LoginSerializer,ManagedUserCreateSerializer,ManagedUserSerializer,ManagedUserUpdateSerializer
+from .serializers import UserSerializer,UserUpdateSerializer,LoginSerializer,ManagedUserCreateSerializer,ManagedUserSerializer,ManagedUserUpdateSerializer,ProfileSerializer
 from rest_framework import status,viewsets
 from rest_framework import generics
 from .models import User
@@ -18,8 +18,17 @@ from users.permissions import (
     IsAdminOrManager,
     IsAdminOrStaff,
 )
+from .serializers import ChangePasswordSerializer
 from rest_framework_simplejwt.settings import api_settings
-
+from .serializers import (
+    UserSerializer,
+    UserUpdateSerializer,
+    LoginSerializer,
+    ManagedUserCreateSerializer,
+    ManagedUserSerializer,
+    ManagedUserUpdateSerializer,
+    ProfileSerializer,
+)
 from rest_framework.permissions import AllowAny
 from rest_framework.exceptions import ValidationError
 
@@ -336,3 +345,63 @@ class UserManagementViewSet(viewsets.ModelViewSet):
             response_serializer.data,
             status=status.HTTP_201_CREATED,
         )    
+
+
+class ProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses=ProfileSerializer,
+    )
+    def get(self, request):
+        serializer = ProfileSerializer(request.user)
+        return Response(serializer.data)
+
+    @extend_schema(
+        request=ProfileSerializer,
+        responses={200: ProfileSerializer},
+    )
+    def patch(self, request):
+        serializer = ProfileSerializer(
+            request.user,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(serializer.data)
+
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=ChangePasswordSerializer,
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string"
+                    }
+                },
+            },
+        },
+    )
+    def post(self, request):
+        serializer = ChangePasswordSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+
+        request.user.set_password(
+            serializer.validated_data["new_password"]
+        )
+        request.user.save(update_fields=["password"])
+
+        return Response({
+            "message": "Password changed successfully. Please log in again."
+        })
